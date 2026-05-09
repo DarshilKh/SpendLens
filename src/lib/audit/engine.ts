@@ -17,6 +17,33 @@ import {
 } from "@/lib/pricing-data";
 import { generateShareSlug } from "@/lib/utils";
 
+// ─── Phrasing helpers ─────────────────────────────────────────────────────────
+// IMPORTANT: distinguish between two different concepts that both involve numbers:
+//
+//   • TEAM SIZE   — total org engineering headcount. Used for benchmarking,
+//                   per-developer spend, and company-wide claims.
+//                   Phrase: "{n}-person team"
+//
+//   • SEAT COUNT  — how many seats are currently provisioned for a SINGLE TOOL.
+//                   Different tools commonly have different seat counts within
+//                   the same org. Used for plan-fit and tool-specific reasoning.
+//                   Phrase: "{n}-seat deployment", "the {n} seats currently
+//                   assigned", or similar — never "{n}-person team".
+//
+// Use these helpers anywhere a tool's per-tool seat count appears.
+
+const seatPhrase = (seats: number): string =>
+  `${seats}-seat deployment`;
+
+const seatsCurrentlyAssigned = (seats: number): string =>
+  `the ${seats} ${seats === 1 ? "seat" : "seats"} currently assigned`;
+
+const seatsCurrentlyProvisioned = (seats: number): string =>
+  `${seats} ${seats === 1 ? "seat" : "seats"} currently provisioned`;
+
+const atSeatCount = (seats: number): string =>
+  `at your current ${seatPhrase(seats)}`;
+
 // ─── Nuanced Plan Evaluation ──────────────────────────────────────────────────
 
 interface PlanEvaluation {
@@ -85,7 +112,7 @@ function evaluatePlanFit(
             betterPlanId: "business",
             betterPlanName: "Business",
             recommendedCostPerSeat: bizPlan.monthlyPricePerSeat,
-            reasoning: `Cursor Enterprise pricing justifies itself through custom deployment, dedicated SLAs, and security review — requirements that typically surface at 20+ engineers under compliance mandates. At ${entry.seats} seats, Cursor Business provides identical AI capabilities, team management, and SSO at a significantly lower rate.`,
+            reasoning: `Cursor Enterprise pricing justifies itself through custom deployment, dedicated SLAs, and security review — requirements that typically surface at 20+ engineers under compliance mandates. ${atSeatCount(entry.seats).charAt(0).toUpperCase() + atSeatCount(entry.seats).slice(1)}, Cursor Business provides identical AI capabilities, team management, and SSO at a significantly lower rate.`,
             confidence: "high",
           };
         }
@@ -96,12 +123,12 @@ function evaluatePlanFit(
         statusLabel: "Well matched",
         isActionable: false,
         recommendedCostPerSeat: costPerSeat,
-        reasoning: `Cursor Enterprise is appropriate for your ${entry.seats}-seat engineering team. At this scale, the custom deployment options, security review process, and dedicated support provide measurable operational value.`,
+        reasoning: `Cursor Enterprise is appropriate ${atSeatCount(entry.seats)}. At this scale, the custom deployment options, security review process, and dedicated support provide measurable operational value.`,
         confidence: "high",
       };
     }
 
-    // Business: justified at 8+ seats for the admin/policy value
+    // Business: justified at 5+ seats for the admin/policy value
     if (entry.planId === "business") {
       if (entry.seats < 5) {
         const proPlan = getPlanById("cursor", "pro");
@@ -114,7 +141,7 @@ function evaluatePlanFit(
             betterPlanId: "pro",
             betterPlanName: "Pro",
             recommendedCostPerSeat: proPlan.monthlyPricePerSeat,
-            reasoning: `Cursor Business adds centralized billing, usage analytics, and admin controls — features that deliver ROI when managing 5+ developers across departments. With ${entry.seats} seat${entry.seats > 1 ? "s" : ""}, these controls add overhead without proportional benefit. Pro delivers the same AI performance at half the per-seat cost.`,
+            reasoning: `Cursor Business adds centralized billing, usage analytics, and admin controls — features that deliver ROI when managing 5+ developers across departments. With ${seatsCurrentlyProvisioned(entry.seats)}, these controls add overhead without proportional benefit. Pro delivers the same AI performance at half the per-seat cost.`,
             confidence: "high",
           };
         }
@@ -126,7 +153,7 @@ function evaluatePlanFit(
           statusLabel: "Minor opportunity",
           isActionable: true,
           recommendedCostPerSeat: costPerSeat,
-          reasoning: `Cursor Business is a reasonable fit at ${entry.seats} seats. That said, if your team hasn't adopted the admin dashboard or centralized policy controls yet, you're paying for overhead you're not using. Confirm utilization before your next renewal — Pro may suffice.`,
+          reasoning: `Cursor Business is a reasonable fit ${atSeatCount(entry.seats)}. That said, if your team hasn't adopted the admin dashboard or centralized policy controls yet, you're paying for overhead you're not using. Confirm utilization before your next renewal — Pro may suffice.`,
           confidence: "medium",
         };
       }
@@ -136,7 +163,7 @@ function evaluatePlanFit(
         statusLabel: "Well matched",
         isActionable: false,
         recommendedCostPerSeat: costPerSeat,
-        reasoning: `Cursor Business is well-matched for your ${entry.seats}-person engineering team. At this scale, centralized billing, usage controls, and team management features are active cost levers, not decorative features.`,
+        reasoning: `Cursor Business is well-matched for ${seatsCurrentlyAssigned(entry.seats)}. At this scale, centralized billing, usage controls, and team management features are active cost levers, not decorative features.`,
         confidence: "high",
       };
     }
@@ -160,7 +187,7 @@ function evaluatePlanFit(
         statusLabel: "Optimized",
         isActionable: false,
         recommendedCostPerSeat: costPerSeat,
-        reasoning: `Cursor Pro is the right tier for your team. At $20/seat with unlimited completions and fast AI request access, it's the highest-value coding assistant tier for engineering teams without enterprise governance requirements.`,
+        reasoning: `Cursor Pro is the right tier ${atSeatCount(entry.seats)}. At $20/seat with unlimited completions and fast AI request access, it's the highest-value coding assistant tier for engineering teams without enterprise governance requirements.`,
         confidence: "high",
       };
     }
@@ -182,7 +209,7 @@ function evaluatePlanFit(
             betterPlanId: "business",
             betterPlanName: "Business",
             recommendedCostPerSeat: bizPlan.monthlyPricePerSeat,
-            reasoning: `Copilot Enterprise's personalized models are trained on your organization's codebase — but the quality improvement requires 15+ active engineers generating sufficient training data over 6+ months. Below that threshold, the model isn't meaningfully differentiated from Business. You're paying a $20/seat premium for a feature you can't yet utilize.`,
+            reasoning: `Copilot Enterprise's personalized models are trained on your organization's codebase — but the quality improvement requires 15+ active engineers generating sufficient training data over 6+ months. Below that threshold, the model isn't meaningfully differentiated from Business. With ${seatsCurrentlyProvisioned(entry.seats)}, you're paying a $20/seat premium for a feature you can't yet utilize.`,
             confidence: "high",
           };
         }
@@ -194,7 +221,7 @@ function evaluatePlanFit(
           statusLabel: "Early for Enterprise",
           isActionable: true,
           recommendedCostPerSeat: costPerSeat,
-          reasoning: `Copilot Enterprise is a reasonable long-term investment at ${entry.seats} seats, but the personalized model benefits compound over time. If you've been on Enterprise less than 6 months, Business provides equivalent immediate value. Revisit after your first annual review with usage data.`,
+          reasoning: `Copilot Enterprise is a reasonable long-term investment ${atSeatCount(entry.seats)}, but the personalized model benefits compound over time. If you've been on Enterprise less than 6 months, Business provides equivalent immediate value. Revisit after your first annual review with usage data.`,
           confidence: "medium",
         };
       }
@@ -204,7 +231,7 @@ function evaluatePlanFit(
         statusLabel: "Strong ROI",
         isActionable: false,
         recommendedCostPerSeat: costPerSeat,
-        reasoning: `Copilot Enterprise is well-justified at ${entry.seats} seats. At this scale, the personalized model, PR summaries, and knowledge base integration deliver compounding productivity gains that more than offset the per-seat premium versus Business.`,
+        reasoning: `Copilot Enterprise is well-justified ${atSeatCount(entry.seats)}. At this scale, the personalized model, PR summaries, and knowledge base integration deliver compounding productivity gains that more than offset the per-seat premium versus Business.`,
         confidence: "high",
       };
     }
@@ -232,7 +259,7 @@ function evaluatePlanFit(
         statusLabel: "Well matched",
         isActionable: false,
         recommendedCostPerSeat: costPerSeat,
-        reasoning: `Copilot Business is the right tier for your team size. The policy management, audit logging, and IP indemnity features are appropriate at ${entry.seats} seats and provide governance value that Individual plans can't offer.`,
+        reasoning: `Copilot Business is the right tier ${atSeatCount(entry.seats)}. The policy management, audit logging, and IP indemnity features provide governance value that Individual plans can't offer.`,
         confidence: "high",
       };
     }
@@ -249,7 +276,7 @@ function evaluatePlanFit(
             betterPlanId: "business",
             betterPlanName: "Business",
             recommendedCostPerSeat: bizPlan.monthlyPricePerSeat,
-            reasoning: `At ${teamSize} team members, Individual Copilot licenses become a compliance liability. Business adds IP indemnity, audit logs, and centralized policy controls — which are practically mandatory once you're building commercial software at this headcount.`,
+            reasoning: `At a ${teamSize}-person org, Individual Copilot licenses become a compliance liability. Business adds IP indemnity, audit logs, and centralized policy controls — which are practically mandatory once you're building commercial software at this headcount.`,
             confidence: "medium",
           };
         }
@@ -260,7 +287,7 @@ function evaluatePlanFit(
         statusLabel: "Optimized",
         isActionable: false,
         recommendedCostPerSeat: costPerSeat,
-        reasoning: `Copilot Individual is cost-efficient for your team size. At $10/seat, it delivers full code completion, chat, and CLI integration without the governance overhead of Business.`,
+        reasoning: `Copilot Individual is cost-efficient ${atSeatCount(entry.seats)}. At $10/seat, it delivers full code completion, chat, and CLI integration without the governance overhead of Business.`,
         confidence: "high",
       };
     }
@@ -282,7 +309,7 @@ function evaluatePlanFit(
             betterPlanId: "pro",
             betterPlanName: "Pro",
             recommendedCostPerSeat: proPlan.monthlyPricePerSeat,
-            reasoning: `Claude Max ($100/seat) targets individual power users who routinely exhaust Pro's message windows. For ${entry.seats} seats across a team, usage patterns rarely sustain Max-level throughput per seat — the aggregate limit is shared, not multiplied. Claude Team at $30/seat provides pooled higher limits with workspace management at less than a third of the cost.`,
+            reasoning: `Claude Max ($100/seat) targets individual power users who routinely exhaust Pro's message windows. Across ${seatsCurrentlyProvisioned(entry.seats)}, usage patterns rarely sustain Max-level throughput per seat — the aggregate limit is shared, not multiplied. Claude Team at $30/seat provides pooled higher limits with workspace management at less than a third of the cost.`,
             confidence: "medium",
           };
         }
@@ -323,7 +350,7 @@ function evaluatePlanFit(
             betterPlanId: "pro",
             betterPlanName: "Pro",
             recommendedCostPerSeat: proPlan.monthlyPricePerSeat,
-            reasoning: `Claude Team adds shared workspaces, admin controls, and usage management — features that require multiple users to generate value. At 1 seat, you're paying a $10/month team premium for features you can't utilize. Pro delivers identical model access and the same usage limits.`,
+            reasoning: `Claude Team adds shared workspaces, admin controls, and usage management — features that require multiple users to generate value. With only 1 seat assigned, you're paying a $10/month team premium for features you can't utilize. Pro delivers identical model access and the same usage limits.`,
             confidence: "high",
           };
         }
@@ -335,7 +362,7 @@ function evaluatePlanFit(
           statusLabel: "Below minimum value threshold",
           isActionable: true,
           recommendedCostPerSeat: costPerSeat,
-          reasoning: `Claude Team has a 5-seat minimum and is optimized for collaborative workspaces with shared projects and admin visibility. At ${entry.seats} seats, you're meeting the floor but not extracting full value from the tier's collaboration features. If your team isn't actively using shared Projects, individual Pro plans may be more cost-effective.`,
+          reasoning: `Claude Team has a 5-seat minimum and is optimized for collaborative workspaces with shared projects and admin visibility. With ${seatsCurrentlyProvisioned(entry.seats)}, you're meeting the floor but not extracting full value from the tier's collaboration features. If your team isn't actively using shared Projects, individual Pro plans may be more cost-effective.`,
           confidence: "medium",
         };
       }
@@ -345,7 +372,7 @@ function evaluatePlanFit(
         statusLabel: "Well matched",
         isActionable: false,
         recommendedCostPerSeat: costPerSeat,
-        reasoning: `Claude Team is well-suited for your ${entry.seats}-person team. The workspace management, shared projects, and higher usage pools are appropriate at this scale and provide measurable collaboration value.`,
+        reasoning: `Claude Team is well-suited for ${seatsCurrentlyAssigned(entry.seats)}. The workspace management, shared projects, and higher usage pools are appropriate at this deployment size and provide measurable collaboration value.`,
         confidence: "high",
       };
     }
@@ -362,7 +389,7 @@ function evaluatePlanFit(
             betterPlanId: "team",
             betterPlanName: "Team",
             recommendedCostPerSeat: teamPlan.monthlyPricePerSeat,
-            reasoning: `At ${entry.seats} Pro seats, you're at the scale where Claude Team ($30/seat) starts delivering structural value: shared Projects, admin-level usage visibility, and centralized billing. The $10/seat premium pays for itself in operational overhead reduction once you're managing 8+ users on a shared AI workflow.`,
+            reasoning: `With ${seatsCurrentlyProvisioned(entry.seats)} on Pro, you're at the scale where Claude Team ($30/seat) starts delivering structural value: shared Projects, admin-level usage visibility, and centralized billing. The $10/seat premium pays for itself in operational overhead reduction once you're managing 8+ users on a shared AI workflow.`,
             confidence: "medium",
           };
         }
@@ -407,7 +434,7 @@ function evaluatePlanFit(
             betterPlanId: "plus",
             betterPlanName: "Plus",
             recommendedCostPerSeat: plusPlan.monthlyPricePerSeat,
-            reasoning: `ChatGPT Team's workspace and admin features require multiple collaborators to generate value. At 1 seat, Plus delivers identical model access, longer context, and the same core capabilities at $10/month less.`,
+            reasoning: `ChatGPT Team's workspace and admin features require multiple collaborators to generate value. With only 1 seat assigned, Plus delivers identical model access, longer context, and the same core capabilities at $10/month less.`,
             confidence: "high",
           };
         }
@@ -419,7 +446,7 @@ function evaluatePlanFit(
           statusLabel: "Well matched",
           isActionable: false,
           recommendedCostPerSeat: costPerSeat,
-          reasoning: `ChatGPT Team provides appropriate value at ${entry.seats} seats. The longer context windows, data privacy guarantees, and team workspace features are meaningfully better than Plus for collaborative use.`,
+          reasoning: `ChatGPT Team provides appropriate value ${atSeatCount(entry.seats)}. The longer context windows, data privacy guarantees, and team workspace features are meaningfully better than Plus for collaborative use.`,
           confidence: "high",
         };
       }
@@ -437,7 +464,7 @@ function evaluatePlanFit(
             betterPlanId: "team",
             betterPlanName: "Team",
             recommendedCostPerSeat: teamPlan.monthlyPricePerSeat,
-            reasoning: `At ${teamSize} users on ChatGPT Plus, you're missing the data privacy guarantees that Team provides — your conversations may be used for training on Plus. For a team of this size using AI for business work, Team's data isolation is worth the $10/seat premium.`,
+            reasoning: `Across a ${teamSize}-person org on ChatGPT Plus, you're missing the data privacy guarantees that Team provides — your conversations may be used for training on Plus. For an organization of this size using AI for business work, Team's data isolation is worth the $10/seat premium.`,
             confidence: "medium",
           };
         }
@@ -465,7 +492,7 @@ function evaluatePlanFit(
             betterPlanId: "team",
             betterPlanName: "Team",
             recommendedCostPerSeat: teamPlan.monthlyPricePerSeat,
-            reasoning: `ChatGPT Enterprise targets organizations with dedicated compliance, SSO, and custom GPT deployment requirements — typically 50+ users. At ${entry.seats} seats, Team provides equivalent AI performance and data privacy at roughly half the cost. Enterprise's custom model fine-tuning and admin analytics aren't cost-justified below this threshold.`,
+            reasoning: `ChatGPT Enterprise targets organizations with dedicated compliance, SSO, and custom GPT deployment requirements — typically 50+ users. With ${seatsCurrentlyProvisioned(entry.seats)}, Team provides equivalent AI performance and data privacy at roughly half the cost. Enterprise's custom model fine-tuning and admin analytics aren't cost-justified below this threshold.`,
             confidence: "high",
           };
         }
@@ -476,7 +503,7 @@ function evaluatePlanFit(
         statusLabel: "Well matched",
         isActionable: false,
         recommendedCostPerSeat: costPerSeat,
-        reasoning: `ChatGPT Enterprise is appropriate at ${entry.seats} seats. The custom GPT deployment, unlimited usage caps, and enterprise admin controls deliver proportional value at this scale.`,
+        reasoning: `ChatGPT Enterprise is appropriate ${atSeatCount(entry.seats)}. The custom GPT deployment, unlimited usage caps, and enterprise admin controls deliver proportional value at this scale.`,
         confidence: "medium",
       };
     }
@@ -537,7 +564,7 @@ function evaluatePlanFit(
             betterPlanId: "pro",
             betterPlanName: "Pro",
             recommendedCostPerSeat: proPlan.monthlyPricePerSeat,
-            reasoning: `Windsurf Teams adds admin analytics and team management for a 3-seat minimum. At ${entry.seats} seat${entry.seats > 1 ? "s" : ""}, the admin overhead isn't proportional — Pro delivers equivalent AI performance at $${proPlan.monthlyPricePerSeat}/seat without the team management layer you don't yet need.`,
+            reasoning: `Windsurf Teams adds admin analytics and team management for a 3-seat minimum. With ${seatsCurrentlyProvisioned(entry.seats)}, the admin overhead isn't proportional — Pro delivers equivalent AI performance at $${proPlan.monthlyPricePerSeat}/seat without the team management layer you don't yet need.`,
             confidence: "high",
           };
         }
@@ -548,7 +575,7 @@ function evaluatePlanFit(
         statusLabel: "Well matched",
         isActionable: false,
         recommendedCostPerSeat: costPerSeat,
-        reasoning: `Windsurf Teams is appropriate at ${entry.seats} seats. The analytics and admin controls provide genuine value at this scale for engineering managers tracking AI tool adoption.`,
+        reasoning: `Windsurf Teams is appropriate ${atSeatCount(entry.seats)}. The analytics and admin controls provide genuine value at this deployment size for engineering managers tracking AI tool adoption.`,
         confidence: "high",
       };
     }
@@ -572,7 +599,7 @@ function evaluatePlanFit(
     statusLabel: "Well matched",
     isActionable: false,
     recommendedCostPerSeat: costPerSeat,
-    reasoning: `${tool.name} ${currentPlan.name} is well-matched to your team's profile. No significant optimization opportunity identified at current usage patterns.`,
+    reasoning: `${tool.name} ${currentPlan.name} is well-matched ${atSeatCount(entry.seats)}. No significant optimization opportunity identified at current usage patterns.`,
     confidence: "high",
   };
 }
@@ -766,6 +793,9 @@ export function runAuditEngine(
   const highSavingsCase = totalMonthlySavings >= 500;
 
   // ─── Benchmark ────────────────────────────────────────────────────────────
+  // NOTE: spendPerDeveloper uses TEAM SIZE (org-wide engineering headcount),
+  // not per-tool seat count. This is intentional — benchmark compares your
+  // overall AI investment per engineer to industry-wide per-engineer norms.
   const spendPerDeveloper =
     teamSize > 0 ? totalCurrentMonthlySpend / teamSize : totalCurrentMonthlySpend;
   const bucket =
