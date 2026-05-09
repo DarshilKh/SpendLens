@@ -1,150 +1,251 @@
 "use client";
 import { useEffect, useState } from "react";
-import { BarChart3 } from "lucide-react";
-import { motion } from "framer-motion";
+import { TrendingUp, TrendingDown, Minus } from "lucide-react";
+import { motion, useSpring, useTransform } from "framer-motion";
 import type { BenchmarkData } from "@/types";
 import { formatCurrency } from "@/lib/utils";
 
-interface Props { benchmark: BenchmarkData; teamSize: number; }
+interface Props {
+  benchmark: BenchmarkData;
+  teamSize: number;
+  useCase?: string;
+}
 
-export default function BenchmarkWidget({ benchmark, teamSize }: Props) {
-  const pct = Math.max(5, Math.min(95, benchmark.percentile));
-  const isHigh = pct > 66;
-  const isLow = pct < 33;
-  const markerColor = isHigh
-    ? "var(--accent-gold)"
-    : isLow
-    ? "var(--accent-green)"
-    : "var(--accent-blue)";
-
-  const [animated, setAnimated] = useState(false);
+function SpringNumber({ target, prefix = "" }: { target: number; prefix?: string }) {
+  const spring = useSpring(0, { stiffness: 60, damping: 22 });
+  const display = useTransform(spring, (v) => `${prefix}${Math.round(v).toLocaleString()}`);
   useEffect(() => {
-    const t = setTimeout(() => setAnimated(true), 100);
+    const t = setTimeout(() => spring.set(target), 100);
+    return () => clearTimeout(t);
+  }, [target, spring]);
+  return <motion.span>{display}</motion.span>;
+}
+
+export default function BenchmarkWidget({ benchmark, teamSize, useCase }: Props) {
+  const pct = Math.max(3, Math.min(97, benchmark.percentile));
+  const [animated, setAnimated] = useState(false);
+
+  useEffect(() => {
+    const t = setTimeout(() => setAnimated(true), 120);
     return () => clearTimeout(t);
   }, []);
 
+  const isHigh = pct > 66;
+  const isLow = pct < 33;
+  const accent = isHigh ? "var(--accent-gold)" : isLow ? "var(--accent-green)" : "var(--text-secondary)";
+  const accentRgb = isHigh ? "180,83,9" : isLow ? "21,128,61" : "64,64,64";
+  const PostureIcon = isHigh ? TrendingUp : isLow ? TrendingDown : Minus;
+  const postureLabel = isHigh ? "Above market" : isLow ? "Below market" : "At market";
+  const postureDetail = isHigh
+    ? "Per-developer spend is higher than most comparable stacks at this team size."
+    : isLow
+      ? "Per-developer spend is lean — within room to invest without overspending."
+      : "Per-developer spend is in line with industry norms.";
+
+  const avg = benchmark.industryAveragePerDeveloper;
+  const p25 = Math.round(avg * 0.55);
+  const p75 = Math.round(avg * 1.55);
   const ticks = [
-    { label: "25th pct", note: "lean ops", v: "$45" },
-    { label: "Median", note: "industry avg", v: `$${benchmark.industryAveragePerDeveloper}` },
-    { label: "75th pct", note: "heavy usage", v: "$130" },
-  ];
+    { label: "25th",  note: "Lean",   value: p25, pos: 25 },
+    { label: "50th",  note: "Median", value: avg, pos: 50 },
+    { label: "75th",  note: "Heavy",  value: p75, pos: 75 },
+  ] as const;
+
+  const delta = benchmark.spendPerDeveloper - benchmark.industryAveragePerDeveloper;
+  const deltaAbs = Math.abs(delta);
+  const deltaSign = delta > 0 ? "+" : delta < 0 ? "−" : "";
 
   return (
-    <div className="card-elevated" role="region" aria-label="Spend benchmark comparison">
-      <div className="flex items-center gap-2 mb-5">
-        <BarChart3 size={14} style={{ color: "var(--text-muted)" }} aria-hidden="true" />
-        <span className="text-label">Spend benchmark</span>
+    <div
+      className="rounded-xl overflow-hidden"
+      style={{ background: "var(--bg-secondary)", border: "1px solid var(--border)" }}
+      role="region"
+      aria-label="Spend benchmark"
+    >
+      {/* Header */}
+      <div
+        className="flex items-center justify-between px-5 py-3 border-b"
+        style={{ borderColor: "var(--hairline)" }}
+      >
+        <span className="text-eyebrow">Spend Benchmark</span>
+        <span
+          className="inline-flex items-center gap-1.5 text-[11px] font-medium"
+          style={{ color: accent }}
+        >
+          <PostureIcon size={11} aria-hidden="true" />
+          {postureLabel}
+        </span>
       </div>
 
-      <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4 mb-5">
-        <div>
-          <p className="text-3xl font-bold tracking-tight" style={{ color: "var(--text-primary)" }}>
-            {formatCurrency(benchmark.spendPerDeveloper)}
-            <span className="text-base font-normal ml-1" style={{ color: "var(--text-muted)" }}>
-              /dev/mo
-            </span>
-          </p>
-          <p className="text-sm mt-1.5" style={{ color: "var(--text-secondary)" }}>
-            Industry avg:{" "}
-            <span className="font-semibold" style={{ color: "var(--text-primary)" }}>
-              {formatCurrency(benchmark.industryAveragePerDeveloper)}/dev/mo
-            </span>
-            {" "}· {teamSize}-person team
-          </p>
-        </div>
-        <div
-          className="text-sm font-semibold capitalize px-3 py-1.5 rounded-lg"
-          style={{
-            color: markerColor,
-            background: `${markerColor}11`,
-            border: `1px solid ${markerColor}33`,
-          }}
-          aria-label={`Benchmark status: ${benchmark.label}`}
-        >
-          {benchmark.label}
-        </div>
-      </div>
+      <div className="px-5 py-5">
 
-      {/* Track */}
-      <div className="relative mb-6" role="img" aria-label={`You are at the ${pct}th percentile`}>
-        {/* Background track */}
-        <div
-          className="h-2 rounded-full overflow-hidden"
-          style={{ background: "var(--bg-highlight)" }}
-        >
-          {/* Gradient fill segments */}
-          <div
-            className="h-full rounded-full relative"
-            style={{
-              width: "100%",
-              background: "linear-gradient(90deg, var(--accent-green) 0%, var(--accent-blue) 50%, var(--accent-gold) 100%)",
-              opacity: 0.25,
-            }}
-          />
-        </div>
-
-        {/* Progress bar */}
-        <motion.div
-          className="absolute top-0 left-0 h-2 rounded-full"
-          initial={{ width: "5%" }}
-          animate={{ width: animated ? `${pct}%` : "5%" }}
-          transition={{ duration: 0.9, ease: "easeOut" }}
-          style={{
-            background: `linear-gradient(90deg, var(--accent-green), ${markerColor})`,
-          }}
-        />
-
-        {/* Industry avg marker */}
-        <div
-          className="absolute top-1/2 -translate-y-1/2 w-px h-4"
-          style={{ left: "50%", background: "var(--text-muted)", opacity: 0.5 }}
-          aria-hidden="true"
-        />
-
-        {/* You marker */}
-        <motion.div
-          className="absolute -top-1 w-4 h-4 rounded-full border-2 -translate-x-1/2"
-          initial={{ left: "5%" }}
-          animate={{ left: animated ? `${pct}%` : "5%" }}
-          transition={{ duration: 0.9, ease: "easeOut" }}
-          style={{ background: markerColor, borderColor: "var(--bg-elevated)" }}
-          aria-hidden="true"
-        />
-
-        <div
-          className="flex justify-between text-xs mt-4"
-          style={{ color: "var(--text-muted)" }}
-          aria-hidden="true"
-        >
-          <span>Low</span>
-          <span>Industry avg ↑</span>
-          <span>High</span>
-        </div>
-      </div>
-
-      {/* Percentile ticks */}
-      <div className="grid grid-cols-3 gap-3" role="list" aria-label="Industry spend percentiles">
-        {ticks.map((tick) => (
-          <div
-            key={tick.label}
-            className="text-center p-2.5 rounded-lg"
-            style={{
-              background: "var(--bg-highlight)",
-              border: "1px solid var(--border-subtle)",
-            }}
-            role="listitem"
-          >
-            <p className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>
-              {tick.v}
+        {/* Primary stat row — two columns split by hairline */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-4 mb-6">
+          <div>
+            <p className="text-eyebrow mb-1.5">Your spend / dev</p>
+            <p
+              className="text-[2rem] font-semibold leading-none tabular"
+              style={{ color: "var(--text-primary)", letterSpacing: "-0.04em" }}
+            >
+              <SpringNumber target={benchmark.spendPerDeveloper} prefix="$" />
+              <span
+                className="text-base font-normal ml-1"
+                style={{ color: "var(--text-muted)" }}
+              >
+                /mo
+              </span>
             </p>
-            <p className="text-xs mt-0.5" style={{ color: "var(--text-muted)" }}>
-              {tick.label}
-            </p>
-            <p className="text-xs" style={{ color: "var(--text-muted)", opacity: 0.7 }}>
-              {tick.note}
+            <p className="text-[11px] mt-2 tabular" style={{ color: "var(--text-muted)" }}>
+              {teamSize}-person team{useCase && ` · ${useCase}`}
             </p>
           </div>
-        ))}
+
+          <div className="sm:border-l sm:pl-6" style={{ borderColor: "var(--hairline)" }}>
+            <p className="text-eyebrow mb-1.5">Industry avg</p>
+            <p
+              className="text-[2rem] font-semibold leading-none tabular"
+              style={{ color: "var(--text-tertiary)", letterSpacing: "-0.04em" }}
+            >
+              ${avg.toLocaleString()}
+              <span
+                className="text-base font-normal ml-1"
+                style={{ color: "var(--text-muted)" }}
+              >
+                /mo
+              </span>
+            </p>
+            <p
+              className="text-[11px] mt-2 font-medium tabular"
+              style={{ color: accent }}
+            >
+              {deltaSign}${deltaAbs}/dev vs avg
+            </p>
+          </div>
+        </div>
+
+        {/* Posture line */}
+        <p className="text-[12px] leading-relaxed mb-5" style={{ color: "var(--text-tertiary)" }}>
+          {postureDetail}
+        </p>
+
+        {/* Track */}
+        <div role="img" aria-label={`${pct}th percentile`}>
+          <div className="relative" style={{ height: "20px" }}>
+            {/* Hairline rail */}
+            <div
+              className="absolute inset-x-0"
+              style={{ top: "9px", height: "2px", background: "var(--hairline)", borderRadius: "1px" }}
+            />
+            {/* Filled segment */}
+            <motion.div
+              className="absolute"
+              style={{
+                top: "9px",
+                height: "2px",
+                left: 0,
+                background: accent,
+                borderRadius: "1px",
+                opacity: 0.8,
+              }}
+              initial={{ width: "3%" }}
+              animate={{ width: animated ? `${pct}%` : "3%" }}
+              transition={{ duration: 1.1, ease: [0.16, 1, 0.3, 1] }}
+            />
+            {/* Median tick */}
+            <div
+              className="absolute"
+              style={{
+                left: "50%",
+                top: "5px",
+                width: "1px",
+                height: "10px",
+                background: "var(--border-strong)",
+                transform: "translateX(-50%)",
+              }}
+              aria-hidden="true"
+            />
+            {/* Marker */}
+            <motion.div
+              className="absolute flex items-center justify-center"
+              style={{ top: "4px", width: "12px", height: "12px", transform: "translateX(-50%)" }}
+              initial={{ left: "3%" }}
+              animate={{ left: animated ? `${pct}%` : "3%" }}
+              transition={{ duration: 1.1, ease: [0.16, 1, 0.3, 1] }}
+              aria-hidden="true"
+            >
+              <div
+                className="absolute inset-0 rounded-full"
+                style={{ background: accent, opacity: 0.18, transform: "scale(2)", filter: "blur(2px)" }}
+              />
+              <div
+                className="w-3 h-3 rounded-full"
+                style={{ background: "var(--bg-secondary)", border: `2px solid ${accent}` }}
+              />
+            </motion.div>
+          </div>
+
+          {/* Marker label */}
+          <div className="relative mt-1.5" style={{ height: "14px" }}>
+            <motion.div
+              className="absolute text-[10px] font-medium tabular"
+              style={{ color: accent, transform: "translateX(-50%)", whiteSpace: "nowrap" }}
+              initial={{ left: "3%" }}
+              animate={{ left: animated ? `${pct}%` : "3%" }}
+              transition={{ duration: 1.1, ease: [0.16, 1, 0.3, 1] }}
+              aria-hidden="true"
+            >
+              You · p{pct}
+            </motion.div>
+          </div>
+
+          {/* Axis labels */}
+          <div
+            className="flex justify-between text-[10px] mt-1.5 uppercase"
+            style={{ color: "var(--text-faint)", letterSpacing: "0.08em" }}
+            aria-hidden="true"
+          >
+            <span>Lean</span>
+            <span>Median</span>
+            <span>Heavy</span>
+          </div>
+        </div>
+
+        {/* Reference table */}
+        <div
+          className="mt-6 grid grid-cols-3 border-t pt-4"
+          style={{ borderColor: "var(--hairline)" }}
+          role="list"
+        >
+          {ticks.map((tick, i) => {
+            const nearest =
+              Math.abs(tick.pos - pct) ===
+              Math.min(...ticks.map((t) => Math.abs(t.pos - pct)));
+            return (
+              <div
+                key={tick.label}
+                className={i > 0 ? "border-l pl-4" : "pr-4"}
+                style={{ borderColor: i > 0 ? "var(--hairline)" : undefined }}
+                role="listitem"
+              >
+                <p
+                  className="text-eyebrow mb-1"
+                  style={{ color: nearest ? accent : "var(--text-faint)" }}
+                >
+                  {tick.label} · {tick.note}
+                </p>
+                <p
+                  className="text-[1rem] font-semibold tabular leading-none"
+                  style={{
+                    color: nearest ? accent : "var(--text-primary)",
+                    letterSpacing: "-0.02em",
+                  }}
+                >
+                  {formatCurrency(tick.value)}
+                </p>
+              </div>
+            );
+          })}
+        </div>
       </div>
     </div>
   );
