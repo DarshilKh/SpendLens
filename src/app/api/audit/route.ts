@@ -27,7 +27,7 @@ function checkRateLimit(ip: string): boolean {
 }
 
 export async function POST(req: NextRequest) {
-  // Rate limiting
+  // ─── Rate limiting ─────────────────────────────────────────────
   const ip =
     req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ??
     req.headers.get("x-real-ip") ??
@@ -37,29 +37,42 @@ export async function POST(req: NextRequest) {
 
   if (!checkRateLimit(ipHash)) {
     return NextResponse.json(
-      { success: false, error: "Rate limit exceeded. Try again in an hour.", code: "RATE_LIMITED" },
+      {
+        success: false,
+        error: "Rate limit exceeded. Try again in an hour.",
+        code: "RATE_LIMITED",
+      },
       { status: 429 }
     );
   }
 
-  // Honeypot check
+  // ─── Parse body ────────────────────────────────────────────────
   let body: unknown;
   try {
     body = await req.json();
   } catch {
-    return NextResponse.json({ success: false, error: "Invalid request body" }, { status: 400 });
+    return NextResponse.json(
+      { success: false, error: "Invalid request body" },
+      { status: 400 }
+    );
   }
 
-  // Check honeypot field
+  // ─── Honeypot ──────────────────────────────────────────────────
   if ((body as Record<string, unknown>)._hp) {
-    return NextResponse.json({ success: true, data: { id: "bot", shareSlug: "bot" } });
+    return NextResponse.json({
+      success: true,
+      data: { id: "bot", shareSlug: "bot" },
+    });
   }
 
-  // Validate input
+  // ─── Validate ──────────────────────────────────────────────────
   const parsed = AuditApiRequestSchema.safeParse(body);
   if (!parsed.success) {
     return NextResponse.json(
-      { success: false, error: parsed.error.issues[0]?.message ?? "Validation failed" },
+      {
+        success: false,
+        error: parsed.error.issues[0]?.message ?? "Validation failed",
+      },
       { status: 400 }
     );
   }
@@ -83,16 +96,37 @@ export async function POST(req: NextRequest) {
       aiSummaryFallback: isFallback,
     };
 
-    // Store in Supabase (fire and forget — don't block response)
-    storeAudit(result).catch((err) =>
-      console.error("[Audit API] Storage failed:", err)
-    );
+    // ─── Persist (CRITICAL — must await) ─────────────────────────
+    //
+    // The previous fire-and-forget pattern silently broke on Vercel:
+    // serverless Lambdas freeze the moment a response is returned, killing
+    // any unawaited promise. The share URL would 404 because the row was
+    // never written. Awaiting here makes the share link reliable AND surfaces
+    // storage errors instead of hiding them.
+    const { error: storeError } = await storeAudit(result);
+
+    if (storeError) {
+      console.error("[Audit API] ❌ Storage failed:", storeError.message);
+      return NextResponse.json(
+        {
+          success: false,
+          error:
+            "Audit completed but could not be saved. Please try again.",
+          code: "STORAGE_FAILED",
+        },
+        { status: 500 }
+      );
+    }
 
     return NextResponse.json({ success: true, data: result });
   } catch (err) {
     console.error("[Audit API] Engine error:", err);
     return NextResponse.json(
-      { success: false, error: "Audit processing failed. Please try again.", code: "ENGINE_ERROR" },
+      {
+        success: false,
+        error: "Audit processing failed. Please try again.",
+        code: "ENGINE_ERROR",
+      },
       { status: 500 }
     );
   }
