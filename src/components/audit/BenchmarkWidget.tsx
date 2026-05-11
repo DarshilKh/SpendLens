@@ -21,7 +21,50 @@ function SpringNumber({ target, prefix = "" }: { target: number; prefix?: string
   return <motion.span>{display}</motion.span>;
 }
 
+/* ─────────────────────────────────────────────────────────────
+   Posture is driven by delta-vs-average, NOT by percentile.
+   Percentile is a position on a skewed distribution; delta is
+   what users actually compare against. A ±10% band around avg
+   reads as "Market aligned" — preventing close-to-avg cases
+   from being labeled "Above market" just because the distribution
+   has a long upper tail.
+   ───────────────────────────────────────────────────────────── */
+type Posture = "above" | "aligned" | "below";
+
+function derivePosture(spend: number, avg: number): Posture {
+  if (avg <= 0) return "aligned";
+  const deltaRatio = (spend - avg) / avg;
+  if (deltaRatio > 0.1) return "above";
+  if (deltaRatio < -0.1) return "below";
+  return "aligned";
+}
+
+const POSTURE_CONFIG = {
+  above: {
+    label: "Above market",
+    detail:
+      "Per-developer spend is higher than the industry average for comparable team sizes.",
+    accent: "var(--accent-gold)",
+    Icon: TrendingUp,
+  },
+  aligned: {
+    label: "Market aligned",
+    detail:
+      "Per-developer spend is in line with the industry average for comparable team sizes.",
+    accent: "var(--text-secondary)",
+    Icon: Minus,
+  },
+  below: {
+    label: "Below market",
+    detail:
+      "Per-developer spend is leaner than the industry average — room to invest without overspending.",
+    accent: "var(--accent-green)",
+    Icon: TrendingDown,
+  },
+} as const;
+
 export default function BenchmarkWidget({ benchmark, teamSize, useCase }: Props) {
+  // Percentile is used only for marker positioning on the distribution track.
   const pct = Math.max(3, Math.min(97, benchmark.percentile));
   const [animated, setAnimated] = useState(false);
 
@@ -30,30 +73,35 @@ export default function BenchmarkWidget({ benchmark, teamSize, useCase }: Props)
     return () => clearTimeout(t);
   }, []);
 
-  const isHigh = pct > 66;
-  const isLow = pct < 33;
-  const accent = isHigh ? "var(--accent-gold)" : isLow ? "var(--accent-green)" : "var(--text-secondary)";
-  const accentRgb = isHigh ? "180,83,9" : isLow ? "21,128,61" : "64,64,64";
-  const PostureIcon = isHigh ? TrendingUp : isLow ? TrendingDown : Minus;
-  const postureLabel = isHigh ? "Above market" : isLow ? "Below market" : "At market";
-  const postureDetail = isHigh
-    ? "Per-developer spend is higher than most comparable stacks at this team size."
-    : isLow
-      ? "Per-developer spend is lean — within room to invest without overspending."
-      : "Per-developer spend is in line with industry norms.";
+  // Posture, label, color, icon — all derived from the SAME source of truth:
+  // delta vs industry average.
+  const posture = derivePosture(
+    benchmark.spendPerDeveloper,
+    benchmark.industryAveragePerDeveloper
+  );
+  const { label: postureLabel, detail: postureDetail, accent, Icon: PostureIcon } =
+    POSTURE_CONFIG[posture];
 
   const avg = benchmark.industryAveragePerDeveloper;
   const p25 = Math.round(avg * 0.55);
   const p75 = Math.round(avg * 1.55);
   const ticks = [
-    { label: "25th",  note: "Lean",   value: p25, pos: 25 },
-    { label: "50th",  note: "Median", value: avg, pos: 50 },
-    { label: "75th",  note: "Heavy",  value: p75, pos: 75 },
+    { label: "25th", note: "Lean", value: p25, pos: 25 },
+    { label: "50th", note: "Median", value: avg, pos: 50 },
+    { label: "75th", note: "Heavy", value: p75, pos: 75 },
   ] as const;
 
   const delta = benchmark.spendPerDeveloper - benchmark.industryAveragePerDeveloper;
   const deltaAbs = Math.abs(delta);
   const deltaSign = delta > 0 ? "+" : delta < 0 ? "−" : "";
+
+  // Delta caption color matches posture so number + label always agree.
+  const deltaColor =
+    posture === "above"
+      ? "var(--accent-gold)"
+      : posture === "below"
+        ? "var(--accent-green)"
+        : "var(--text-tertiary)";
 
   return (
     <div
@@ -78,7 +126,6 @@ export default function BenchmarkWidget({ benchmark, teamSize, useCase }: Props)
       </div>
 
       <div className="px-5 py-5">
-
         {/* Primary stat row — two columns split by hairline */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-4 mb-6">
           <div>
@@ -116,7 +163,7 @@ export default function BenchmarkWidget({ benchmark, teamSize, useCase }: Props)
             </p>
             <p
               className="text-[11px] mt-2 font-medium tabular"
-              style={{ color: accent }}
+              style={{ color: deltaColor }}
             >
               {deltaSign}${deltaAbs}/dev vs avg
             </p>
@@ -124,7 +171,10 @@ export default function BenchmarkWidget({ benchmark, teamSize, useCase }: Props)
         </div>
 
         {/* Posture line */}
-        <p className="text-[12px] leading-relaxed mb-5" style={{ color: "var(--text-tertiary)" }}>
+        <p
+          className="text-[12px] leading-relaxed mb-5"
+          style={{ color: "var(--text-tertiary)" }}
+        >
           {postureDetail}
         </p>
 
@@ -134,7 +184,12 @@ export default function BenchmarkWidget({ benchmark, teamSize, useCase }: Props)
             {/* Hairline rail */}
             <div
               className="absolute inset-x-0"
-              style={{ top: "9px", height: "2px", background: "var(--hairline)", borderRadius: "1px" }}
+              style={{
+                top: "9px",
+                height: "2px",
+                background: "var(--hairline)",
+                borderRadius: "1px",
+              }}
             />
             {/* Filled segment */}
             <motion.div
@@ -167,7 +222,12 @@ export default function BenchmarkWidget({ benchmark, teamSize, useCase }: Props)
             {/* Marker */}
             <motion.div
               className="absolute flex items-center justify-center"
-              style={{ top: "4px", width: "12px", height: "12px", transform: "translateX(-50%)" }}
+              style={{
+                top: "4px",
+                width: "12px",
+                height: "12px",
+                transform: "translateX(-50%)",
+              }}
               initial={{ left: "3%" }}
               animate={{ left: animated ? `${pct}%` : "3%" }}
               transition={{ duration: 1.1, ease: [0.16, 1, 0.3, 1] }}
@@ -175,11 +235,19 @@ export default function BenchmarkWidget({ benchmark, teamSize, useCase }: Props)
             >
               <div
                 className="absolute inset-0 rounded-full"
-                style={{ background: accent, opacity: 0.18, transform: "scale(2)", filter: "blur(2px)" }}
+                style={{
+                  background: accent,
+                  opacity: 0.18,
+                  transform: "scale(2)",
+                  filter: "blur(2px)",
+                }}
               />
               <div
                 className="w-3 h-3 rounded-full"
-                style={{ background: "var(--bg-secondary)", border: `2px solid ${accent}` }}
+                style={{
+                  background: "var(--bg-secondary)",
+                  border: `2px solid ${accent}`,
+                }}
               />
             </motion.div>
           </div>
@@ -188,7 +256,11 @@ export default function BenchmarkWidget({ benchmark, teamSize, useCase }: Props)
           <div className="relative mt-1.5" style={{ height: "14px" }}>
             <motion.div
               className="absolute text-[10px] font-medium tabular"
-              style={{ color: accent, transform: "translateX(-50%)", whiteSpace: "nowrap" }}
+              style={{
+                color: accent,
+                transform: "translateX(-50%)",
+                whiteSpace: "nowrap",
+              }}
               initial={{ left: "3%" }}
               animate={{ left: animated ? `${pct}%` : "3%" }}
               transition={{ duration: 1.1, ease: [0.16, 1, 0.3, 1] }}
