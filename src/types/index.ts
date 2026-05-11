@@ -29,6 +29,25 @@ export interface AuditFormData {
 
 // ─── Pricing Data Types ──────────────────────────────────────────────────────
 
+/**
+ * Pricing model for a plan:
+ *
+ *   • undefined / absent → standard per-seat pricing.
+ *                          monthlyPricePerSeat × seats = expected spend.
+ *                          The form auto-fills the "Actual / mo" field.
+ *
+ *   • "usage"            → metered / pay-per-token (e.g. raw API access).
+ *                          monthlyPricePerSeat is conventionally 0.
+ *                          The form does NOT auto-fill — user enters their
+ *                          real invoice amount.
+ *
+ *   • "custom"           → sales-quoted contract pricing (e.g. Enterprise tiers).
+ *                          monthlyPricePerSeat may be 0 (truly custom) or a
+ *                          "starting from" estimate. The form does NOT
+ *                          auto-fill — user enters their contracted amount.
+ */
+export type PlanPriceType = "usage" | "custom";
+
 export interface PricingPlan {
   id: string;
   name: string;
@@ -38,6 +57,8 @@ export interface PricingPlan {
   maxSeats?: number;
   features: string[];
   bestFor: UseCase[];
+  /** Undefined for standard per-seat plans. See PlanPriceType for details. */
+  priceType?: PlanPriceType;
 }
 
 export interface ToolDefinition {

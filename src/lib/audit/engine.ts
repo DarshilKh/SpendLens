@@ -17,9 +17,81 @@ import {
 } from "@/lib/pricing-data";
 import { generateShareSlug } from "@/lib/utils";
 
-const seatPhrase = (seats: number): string =>
-  `${seats}-seat deployment`;
+type OrgTier = "solo" | "small" | "growing" | "midmarket" | "enterprise";
 
+function classifyOrg(teamSize: number): OrgTier {
+  if (teamSize <= 2) return "solo";
+  if (teamSize <= 10) return "small";
+  if (teamSize <= 25) return "growing";
+  if (teamSize <= 100) return "midmarket";
+  return "enterprise";
+}
+const PROCUREMENT_FLOOR: Record<string, Record<OrgTier, string[]>> = {
+  cursor: {
+    solo: ["pro", "pro_plus", "ultra", "teams", "enterprise"],
+    small: ["pro", "pro_plus", "ultra", "teams", "enterprise"],
+    growing: ["teams", "enterprise"],
+    midmarket: ["teams", "enterprise"],
+    enterprise: ["teams", "enterprise"],
+  },
+  github_copilot: {
+    solo: ["pro", "pro_plus", "business", "enterprise"],
+    small: ["pro", "pro_plus", "business", "enterprise"],
+    growing: ["business", "enterprise"],
+    midmarket: ["business", "enterprise"],
+    enterprise: ["business", "enterprise"],
+  },
+  claude: {
+    solo: ["pro", "max_5x", "max_20x", "team_standard", "team_premium", "enterprise"],
+    small: ["pro", "max_5x", "max_20x", "team_standard", "team_premium", "enterprise"],
+    growing: ["team_standard", "team_premium", "enterprise"],
+    midmarket: ["team_standard", "team_premium", "enterprise"],
+    enterprise: ["team_standard", "team_premium", "enterprise"],
+  },
+  chatgpt: {
+    solo: ["plus", "pro", "business", "enterprise"],
+    small: ["plus", "pro", "business", "enterprise"],
+    growing: ["business", "enterprise"],
+    midmarket: ["business", "enterprise"],
+    enterprise: ["business", "enterprise"],
+  },
+  gemini: {
+    solo: ["ai_plus", "ai_pro", "ai_ultra", "workspace_standard", "workspace_plus"],
+    small: ["ai_plus", "ai_pro", "ai_ultra", "workspace_standard", "workspace_plus"],
+    growing: ["workspace_standard", "workspace_plus"],
+    midmarket: ["workspace_standard", "workspace_plus"],
+    enterprise: ["workspace_standard", "workspace_plus"],
+  },
+  windsurf: {
+    solo: ["pro", "max", "teams", "enterprise"],
+    small: ["pro", "max", "teams", "enterprise"],
+    growing: ["teams", "enterprise"],
+    midmarket: ["teams", "enterprise"],
+    enterprise: ["teams", "enterprise"],
+  },
+};
+
+function isPlanReachable(toolId: string, planId: string, tier: OrgTier): boolean {
+  const allowed = PROCUREMENT_FLOOR[toolId]?.[tier];
+  if (!allowed) return true;
+  return allowed.includes(planId);
+}
+
+function getCheapestReachablePlan(toolId: string, tier: OrgTier) {
+  const allowed = PROCUREMENT_FLOOR[toolId]?.[tier];
+  if (!allowed?.length) return null;
+  const tool = getToolById(toolId);
+  if (!tool) return null;
+
+  const candidates = allowed
+    .map((pid) => tool.plans.find((p) => p.id === pid))
+    .filter((p): p is NonNullable<typeof p> => Boolean(p))
+    .sort((a, b) => a.monthlyPricePerSeat - b.monthlyPricePerSeat);
+
+  return candidates[0] ?? null;
+}
+
+// ─── Phrasing helpers ─────────────────────────────────────────────────────────
 const seatsCurrentlyAssigned = (seats: number): string =>
   `the ${seats} ${seats === 1 ? "seat" : "seats"} currently assigned`;
 
@@ -27,10 +99,14 @@ const seatsCurrentlyProvisioned = (seats: number): string =>
   `${seats} ${seats === 1 ? "seat" : "seats"} currently provisioned`;
 
 const atSeatCount = (seats: number): string =>
-  `at your current ${seatPhrase(seats)}`;
+  `at your current ${seats}-seat deployment`;
 
 const capitalize = (s: string): string =>
   s.charAt(0).toUpperCase() + s.slice(1);
+
+
+const ENTERPRISE_OVERKILL_THRESHOLD = 25; // below this → overkill
+const ENTERPRISE_VERIFY_THRESHOLD = 50;   // below this → verify scope
 
 // ─── Plan Evaluation ──────────────────────────────────────────────────────────
 
@@ -53,6 +129,8 @@ function evaluatePlanFit(
 ): PlanEvaluation {
   const tool = getToolById(entry.toolId);
   const currentPlan = getPlanById(entry.toolId, entry.planId);
+  const orgTier = classifyOrg(teamSize);
+  const isLargeOrg = orgTier === "midmarket" || orgTier === "enterprise";
 
   if (!tool || !currentPlan) {
     return {
@@ -71,95 +149,119 @@ function evaluatePlanFit(
 
   // ── Spend anomaly: reported vs expected ──────────────────────────────
   if (expectedTotal > 0 && entry.monthlySpend > expectedTotal * 1.25 && costPerSeat > 0) {
-    const pctOver = Math.round(((entry.monthlySpend - expectedTotal) / expectedTotal) * 100);
+    const pctOver = Math.round(
+      ((entry.monthlySpend - expectedTotal) / expectedTotal) * 100
+    );
     return {
       recommendationType: "slight_overprovision",
       severity: "warning",
       statusLabel: "Spend anomaly",
       isActionable: true,
       recommendedCostPerSeat: costPerSeat,
-      reasoning: `Your reported spend of $${entry.monthlySpend}/mo is ${pctOver}% above the standard rate of $${expectedTotal}/mo for ${entry.seats} ${currentPlan.name} seat${entry.seats > 1 ? "s" : ""}. This typically indicates legacy pricing tiers, usage overages, or unadvertised add-ons. Request a line-item breakdown from ${tool.name} before your next renewal.`,
+      reasoning: `Your reported spend of $${entry.monthlySpend}/mo is ${pctOver}% above the standard rate of $${expectedTotal}/mo for ${entry.seats} ${currentPlan.name} seat${entry.seats > 1 ? "s" : ""}. Likely indicates legacy pricing tiers, usage overages, or unadvertised add-ons. Request a line-item breakdown from ${tool.name} before your next renewal.`,
       confidence: "medium",
     };
   }
 
   // ════════════════════════════════════════════════════════════════════
-  // CURSOR — IDs: hobby, pro, pro_plus, ultra, teams, enterprise
+  // CURSOR
   // ════════════════════════════════════════════════════════════════════
   if (tool.id === "cursor") {
-    // Enterprise: 20+ engineers under compliance mandates
+
     if (entry.planId === "enterprise") {
-      if (entry.seats < 20) {
+      const teamsPlan = getPlanById("cursor", "teams");
+
+      // True overkill: small/growing orgs that don't yet need Enterprise governance
+      if (teamSize < ENTERPRISE_OVERKILL_THRESHOLD && teamsPlan) {
+        return {
+          recommendationType: "enterprise_overkill",
+          severity: "savings",
+          statusLabel: "Enterprise overkill",
+          isActionable: true,
+          betterPlanId: "teams",
+          betterPlanName: "Teams",
+          recommendedCostPerSeat: teamsPlan.monthlyPricePerSeat,
+          reasoning: `Cursor Enterprise's pooled org usage, SCIM, custom deployment, and dedicated SLAs justify themselves at 50+ engineers under compliance mandates. For a ${teamSize}-person org, Cursor Teams at $40/seat provides equivalent SSO, centralized billing, and admin controls — Enterprise's premium isn't yet earned at this scale.`,
+          confidence: "high",
+        };
+      }
+
+      // Verify scope: 25–49 engineers — Enterprise is reasonable but worth auditing
+      if (teamSize < ENTERPRISE_VERIFY_THRESHOLD && teamsPlan) {
+        return {
+          recommendationType: "minor_opportunity",
+          severity: "info",
+          statusLabel: "Verify scope",
+          isActionable: true,
+          betterPlanId: "teams",
+          betterPlanName: "Teams",
+          recommendedCostPerSeat: teamsPlan.monthlyPricePerSeat,
+          reasoning: `Cursor Enterprise is reasonable ${atSeatCount(entry.seats)}, but at a ${teamSize}-person org you're at the threshold where Teams ($40/seat) typically suffices unless you have active SOC 2 / ISO 27001 audits, SCIM provisioning needs, or pooled-usage requirements. If those aren't current operational requirements, Teams delivers the same AI capabilities at a meaningful per-seat discount. Audit utilization before next renewal.`,
+          confidence: "medium",
+        };
+      }
+
+      // 50+ engineers: Cursor Enterprise is genuinely the right tier
+      return {
+        recommendationType: "strong_roi",
+        severity: "optimal",
+        statusLabel: "Enterprise justified",
+        isActionable: false,
+        recommendedCostPerSeat: costPerSeat,
+        reasoning: `Cursor Enterprise is well-matched ${atSeatCount(entry.seats)} for a ${teamSize}-person engineering org. At this scale, pooled org usage, SCIM seat management, audit logs, custom deployment options, and dedicated SLAs become operational requirements — not optional overhead. The premium over Teams reflects real governance value at this org size.`,
+        confidence: "high",
+      };
+    }
+
+    if (entry.planId === "teams") {
+      if (orgTier === "solo" || orgTier === "small") {
+        if (entry.seats < 5) {
+          const proPlan = getPlanById("cursor", "pro");
+          if (proPlan) {
+            return {
+              recommendationType: "slight_overprovision",
+              severity: "savings",
+              statusLabel: "Slight overprovision",
+              isActionable: true,
+              betterPlanId: "pro",
+              betterPlanName: "Pro",
+              recommendedCostPerSeat: proPlan.monthlyPricePerSeat,
+              reasoning: `Cursor Teams at $40/seat adds centralized billing, SSO, and admin controls — features that earn ROI at 5+ developers under shared governance. With ${seatsCurrentlyProvisioned(entry.seats)} in a ${teamSize}-person org, individual Pro plans at $20/seat deliver the same AI performance at half the per-seat cost.`,
+              confidence: "high",
+            };
+          }
+        }
+      }
+      return {
+        recommendationType: "already_optimal",
+        severity: "optimal",
+        statusLabel: "Well matched",
+        isActionable: false,
+        recommendedCostPerSeat: costPerSeat,
+        reasoning: `Cursor Teams is well-matched for ${seatsCurrentlyAssigned(entry.seats)} in a ${teamSize}-person organization. At $40/seat, centralized billing, SSO, and admin governance are operational requirements at this scale, not optional overhead.`,
+        confidence: "high",
+      };
+    }
+
+    if (entry.planId === "ultra") {
+      const proPlusPlan = getPlanById("cursor", "pro_plus");
+      if (isLargeOrg) {
         const teamsPlan = getPlanById("cursor", "teams");
         if (teamsPlan) {
           return {
-            recommendationType: "enterprise_overkill",
+            recommendationType: "slight_overprovision",
             severity: "savings",
-            statusLabel: "Enterprise overkill",
+            statusLabel: "Wrong tier for org size",
             isActionable: true,
             betterPlanId: "teams",
             betterPlanName: "Teams",
             recommendedCostPerSeat: teamsPlan.monthlyPricePerSeat,
-            reasoning: `Cursor Enterprise pricing justifies itself through pooled org usage, custom deployment, dedicated SLAs, and security review — requirements that typically surface at 20+ engineers under compliance mandates. ${capitalize(atSeatCount(entry.seats))}, Cursor Teams provides identical AI capabilities, centralized billing, and SSO at $40/seat — significantly less than Enterprise.`,
+            reasoning: `Cursor Ultra at $200/seat is an individual subscription tier — operationally unsuitable for a ${teamSize}-person organization (no centralized billing, SSO, or admin controls). Cursor Teams at $40/seat is the right tier for org-managed seats. If specific power users need Ultra-level usage, mix Teams seats with a small number of Ultra seats for those users.`,
             confidence: "high",
           };
         }
       }
-      return {
-        recommendationType: "strong_roi",
-        severity: "optimal",
-        statusLabel: "Well matched",
-        isActionable: false,
-        recommendedCostPerSeat: costPerSeat,
-        reasoning: `Cursor Enterprise is appropriate ${atSeatCount(entry.seats)}. At this scale, pooled org usage, custom deployment options, and dedicated support provide measurable operational value.`,
-        confidence: "high",
-      };
-    }
-
-    // Teams: justified at 5+ seats for centralized billing/SSO value
-    if (entry.planId === "teams") {
-      if (entry.seats < 5) {
-        const proPlan = getPlanById("cursor", "pro");
-        if (proPlan) {
-          return {
-            recommendationType: "slight_overprovision",
-            severity: "savings",
-            statusLabel: "Slight overprovision",
-            isActionable: true,
-            betterPlanId: "pro",
-            betterPlanName: "Pro",
-            recommendedCostPerSeat: proPlan.monthlyPricePerSeat,
-            reasoning: `Cursor Teams adds centralized billing, SSO, usage analytics, and admin controls — features that deliver ROI when managing 5+ developers across departments. With ${seatsCurrentlyProvisioned(entry.seats)}, these controls add overhead without proportional benefit. Pro at $20/seat delivers the same AI performance at half the per-seat cost.`,
-            confidence: "high",
-          };
-        }
-      }
-      if (entry.seats >= 5 && entry.seats < 8) {
-        return {
-          recommendationType: "minor_opportunity",
-          severity: "info",
-          statusLabel: "Minor opportunity",
-          isActionable: true,
-          recommendedCostPerSeat: costPerSeat,
-          reasoning: `Cursor Teams is a reasonable fit ${atSeatCount(entry.seats)}. That said, if your team hasn't adopted the admin dashboard or centralized policy controls yet, you're paying for overhead you're not using. Confirm utilization before your next renewal — Pro may suffice.`,
-          confidence: "medium",
-        };
-      }
-      return {
-        recommendationType: "strong_roi",
-        severity: "optimal",
-        statusLabel: "Well matched",
-        isActionable: false,
-        recommendedCostPerSeat: costPerSeat,
-        reasoning: `Cursor Teams is well-matched for ${seatsCurrentlyAssigned(entry.seats)}. At this scale, centralized billing, usage controls, and SSO are active cost levers, not decorative features.`,
-        confidence: "high",
-      };
-    }
-
-    // Ultra: justified only for sustained heavy usage
-    if (entry.planId === "ultra") {
-      const proPlusPlan = getPlanById("cursor", "pro_plus");
-      if (proPlusPlan) {
+      if (proPlusPlan && useCase !== "coding") {
         return {
           recommendationType: "slight_overprovision",
           severity: "savings",
@@ -168,14 +270,38 @@ function evaluatePlanFit(
           betterPlanId: "pro_plus",
           betterPlanName: "Pro+",
           recommendedCostPerSeat: proPlusPlan.monthlyPricePerSeat,
-          reasoning: `Cursor Ultra at $200/seat targets developers running parallel background agents and exhausting Pro+'s 3× usage pool daily. Pro+ at $60/seat covers the vast majority of heavy users — only upgrade if monthly credit overages on Pro+ consistently exceed $40. ${capitalize(atSeatCount(entry.seats))}, the $140/seat premium rarely pays off.`,
+          reasoning: `Cursor Ultra at $200 targets developers running parallel background agents on heavy coding workflows. For ${useCase} use, Pro+ at $60 covers most usage patterns. Track whether you're consistently exhausting Pro+'s $60 credit pool before committing to Ultra.`,
           confidence: "medium",
         };
       }
+      return {
+        recommendationType: "already_optimal",
+        severity: "optimal",
+        statusLabel: "Justified",
+        isActionable: false,
+        recommendedCostPerSeat: costPerSeat,
+        reasoning: `Cursor Ultra is appropriate for sustained heavy agentic workflows. The 20× usage pool handles parallel background agent execution without overage charges.`,
+        confidence: "medium",
+      };
     }
 
-    // Pro+: justified for users hitting Pro's $20 credit pool
     if (entry.planId === "pro_plus") {
+      if (isLargeOrg) {
+        const teamsPlan = getPlanById("cursor", "teams");
+        if (teamsPlan) {
+          return {
+            recommendationType: "slight_overprovision",
+            severity: "savings",
+            statusLabel: "Wrong tier for org size",
+            isActionable: true,
+            betterPlanId: "teams",
+            betterPlanName: "Teams",
+            recommendedCostPerSeat: teamsPlan.monthlyPricePerSeat,
+            reasoning: `Cursor Pro+ at $60/seat is an individual subscription — operationally unsuitable for a ${teamSize}-person organization that requires centralized billing, SSO, and admin governance. Teams at $40/seat is the appropriate org-grade tier and is actually $20 cheaper per seat.`,
+            confidence: "high",
+          };
+        }
+      }
       const proPlan = getPlanById("cursor", "pro");
       if (proPlan && useCase !== "coding") {
         return {
@@ -186,7 +312,7 @@ function evaluatePlanFit(
           betterPlanId: "pro",
           betterPlanName: "Pro",
           recommendedCostPerSeat: proPlan.monthlyPricePerSeat,
-          reasoning: `Cursor Pro+ at $60/seat provides 3× the credit pool of Pro — valuable for sustained code generation workflows. For ${useCase} use cases, you're unlikely to exhaust Pro's $20 monthly credit pool. Downgrading saves $40/seat/month with negligible day-to-day difference.`,
+          reasoning: `Cursor Pro+ at $60/seat triples Pro's credit pool — valuable for sustained code generation. For ${useCase} workflows, Pro's $20 pool is rarely exhausted. Downgrading saves $40/seat/month with negligible day-to-day difference.`,
           confidence: "medium",
         };
       }
@@ -196,13 +322,28 @@ function evaluatePlanFit(
         statusLabel: "Justified",
         isActionable: false,
         recommendedCostPerSeat: costPerSeat,
-        reasoning: `Cursor Pro+ is appropriate for sustained coding workflows. The 3× usage pool ($60 vs $20) handles most heavy-usage patterns without overage charges.`,
+        reasoning: `Cursor Pro+ is appropriate for sustained coding workflows. The 3× usage pool handles most heavy-usage patterns without overage charges.`,
         confidence: "medium",
       };
     }
 
-    // Pro: the sweet spot
     if (entry.planId === "pro") {
+      if (isLargeOrg) {
+        const teamsPlan = getPlanById("cursor", "teams");
+        if (teamsPlan) {
+          return {
+            recommendationType: "upgrade_recommended",
+            severity: "info",
+            statusLabel: "Procurement gap",
+            isActionable: true,
+            betterPlanId: "teams",
+            betterPlanName: "Teams",
+            recommendedCostPerSeat: teamsPlan.monthlyPricePerSeat,
+            reasoning: `${seatsCurrentlyProvisioned(entry.seats)} on individual Pro subscriptions in a ${teamSize}-person org creates governance risk: no centralized billing, no SSO, no usage visibility, no audit trail. Cursor Teams at $40/seat consolidates these into a single procurement contract — the $20/seat premium pays for IT overhead reduction and compliance posture.`,
+            confidence: "high",
+          };
+        }
+      }
       if (useCase === "writing" || useCase === "research") {
         return {
           recommendationType: "minor_opportunity",
@@ -210,7 +351,7 @@ function evaluatePlanFit(
           statusLabel: "Use case mismatch",
           isActionable: true,
           recommendedCostPerSeat: costPerSeat,
-          reasoning: `Cursor Pro is purpose-built for code generation workflows. For primarily ${useCase} use cases, the $20 credit pool and code-focused context system deliver limited value. Claude Pro or ChatGPT Plus would provide better output quality per dollar for your workload.`,
+          reasoning: `Cursor Pro is purpose-built for code generation. For ${useCase} workflows, the $20 credit pool and code-focused context system deliver limited value. Claude Pro or ChatGPT Plus would provide better output quality per dollar.`,
           confidence: "medium",
         };
       }
@@ -220,57 +361,83 @@ function evaluatePlanFit(
         statusLabel: "Optimized",
         isActionable: false,
         recommendedCostPerSeat: costPerSeat,
-        reasoning: `Cursor Pro is the right tier ${atSeatCount(entry.seats)}. At $20/seat with unlimited Tab completions and frontier model access, it's the highest-value coding assistant tier for engineering teams without enterprise governance requirements.`,
+        reasoning: `Cursor Pro is the right tier ${atSeatCount(entry.seats)}. At $20/seat, it delivers unlimited Tab completions and frontier model access for engineering teams without enterprise governance requirements.`,
         confidence: "high",
       };
     }
   }
 
   // ════════════════════════════════════════════════════════════════════
-  // GITHUB COPILOT — IDs: free, pro, pro_plus, business, enterprise
+  // GITHUB COPILOT
   // ════════════════════════════════════════════════════════════════════
   if (tool.id === "github_copilot") {
+
     if (entry.planId === "enterprise") {
-      if (entry.seats < 15) {
-        const bizPlan = getPlanById("github_copilot", "business");
-        if (bizPlan) {
-          return {
-            recommendationType: "enterprise_overkill",
-            severity: "savings",
-            statusLabel: "Enterprise overkill",
-            isActionable: true,
-            betterPlanId: "business",
-            betterPlanName: "Business",
-            recommendedCostPerSeat: bizPlan.monthlyPricePerSeat,
-            reasoning: `Copilot Enterprise's personalized models (trained on your codebase) require 15+ active engineers and 6+ months of usage data to differentiate from Business. With ${seatsCurrentlyProvisioned(entry.seats)}, the model isn't meaningfully tuned. Enterprise also requires GitHub Enterprise Cloud (+$21/user) — bringing the effective cost to ~$60/seat. Business at $19/seat provides equivalent value with audit logs, IP indemnity, and SAML SSO.`,
-            confidence: "high",
-          };
-        }
+      const bizPlan = getPlanById("github_copilot", "business");
+
+      // True overkill: small orgs that don't yet benefit from personalized models
+      if (teamSize < ENTERPRISE_OVERKILL_THRESHOLD && bizPlan) {
+        const hint =
+          entry.seats < 15
+            ? "personalized models require 15+ engineers and 6+ months of usage data to differentiate from Business"
+            : "personalized model benefits compound over 6+ months of usage";
+        return {
+          recommendationType: "enterprise_overkill",
+          severity: "savings",
+          statusLabel: "Enterprise overkill",
+          isActionable: true,
+          betterPlanId: "business",
+          betterPlanName: "Business",
+          recommendedCostPerSeat: bizPlan.monthlyPricePerSeat,
+          reasoning: `Copilot Enterprise's ${hint}. Enterprise also requires GitHub Enterprise Cloud (+$21/user), bringing the effective cost to ~$60/seat. Business at $19/seat provides equivalent value with audit logs, IP indemnity, and SAML SSO.`,
+          confidence: "high",
+        };
       }
-      if (entry.seats >= 15 && entry.seats < 30) {
+
+      // Verify scope: 25–49 engineers
+      if (teamSize < ENTERPRISE_VERIFY_THRESHOLD && bizPlan) {
         return {
           recommendationType: "minor_opportunity",
           severity: "info",
-          statusLabel: "Early for Enterprise",
+          statusLabel: "Verify scope",
           isActionable: true,
-          recommendedCostPerSeat: costPerSeat,
-          reasoning: `Copilot Enterprise is a reasonable long-term investment ${atSeatCount(entry.seats)}, but factor in the GitHub Enterprise Cloud requirement (+$21/user). Effective per-seat cost is ~$60. If you've been on Enterprise less than 6 months, Business at $19 provides equivalent immediate value. Revisit after annual usage review.`,
+          betterPlanId: "business",
+          betterPlanName: "Business",
+          recommendedCostPerSeat: bizPlan.monthlyPricePerSeat,
+          reasoning: `Copilot Enterprise is reasonable at a ${teamSize}-person org, but personalized codebase models and knowledge-base integration take 6+ months and 15+ active contributors to deliver measurable lift. Enterprise also requires GitHub Enterprise Cloud (+$21/user/mo). If your team isn't actively using knowledge bases or PR summaries, Business at $19/seat provides equivalent audit logs, IP indemnity, and SSO for less. Review utilization before renewal.`,
           confidence: "medium",
         };
       }
+
+      // 50+ engineers: Enterprise is genuinely the right tier
       return {
         recommendationType: "strong_roi",
         severity: "optimal",
         statusLabel: "Strong ROI",
         isActionable: false,
         recommendedCostPerSeat: costPerSeat,
-        reasoning: `Copilot Enterprise is well-justified ${atSeatCount(entry.seats)}. At this scale, personalized models, knowledge base integration, and PR summaries deliver compounding productivity gains that offset the $39 + $21 GitHub Enterprise Cloud cost.`,
+        reasoning: `Copilot Enterprise is well-justified ${atSeatCount(entry.seats)} for a ${teamSize}-person org. Personalized models trained on your codebase, knowledge base integration, and PR summaries deliver compounding productivity gains that offset the $39 + $21 GHEC cost at this scale.`,
         confidence: "high",
       };
     }
 
-    // Pro+: justified above ~325 premium requests/mo
     if (entry.planId === "pro_plus") {
+      if (isLargeOrg) {
+        const bizPlan = getPlanById("github_copilot", "business");
+        if (bizPlan) {
+          return {
+            recommendationType: "slight_overprovision",
+            severity: "savings",
+            statusLabel: "Wrong tier for org size",
+            isActionable: true,
+            betterPlanId: "business",
+            betterPlanName: "Business",
+            recommendedCostPerSeat: bizPlan.monthlyPricePerSeat,
+            reasoning: `Copilot Pro+ at $39/seat is an individual subscription — operationally unsuitable for a ${teamSize}-person org without IP indemnity, audit logs, or central policy controls. Business at $19/seat provides org-grade governance for $20 less per seat.`,
+            confidence: "high",
+          };
+        }
+      }
       const proPlan = getPlanById("github_copilot", "pro");
       if (proPlan) {
         return {
@@ -281,14 +448,14 @@ function evaluatePlanFit(
           betterPlanId: "pro",
           betterPlanName: "Pro",
           recommendedCostPerSeat: proPlan.monthlyPricePerSeat,
-          reasoning: `Copilot Pro+ at $39/seat unlocks 1,500 premium requests/month versus Pro's 300. The break-even is ~325 requests — track one month of usage before committing. If you're consistently under that threshold, Pro at $10/seat delivers the same code completion and IDE chat experience for $29 less per seat.`,
+          reasoning: `Copilot Pro+ at $39/seat unlocks 1,500 premium requests/month versus Pro's 300. Break-even is ~325 requests. Track one month of usage before committing — if consistently under, Pro at $10/seat saves $29/seat.`,
           confidence: "medium",
         };
       }
     }
 
     if (entry.planId === "business") {
-      if (teamSize <= 3) {
+      if (orgTier === "solo") {
         const proPlan = getPlanById("github_copilot", "pro");
         if (proPlan) {
           return {
@@ -299,7 +466,7 @@ function evaluatePlanFit(
             betterPlanId: "pro",
             betterPlanName: "Pro",
             recommendedCostPerSeat: proPlan.monthlyPricePerSeat,
-            reasoning: `Copilot Business adds policy management, audit logs, and IP indemnity — governance features that matter when managing a developer team centrally. For a ${teamSize}-person team without a dedicated security or compliance function, Pro plans at $10/seat provide the same coding performance at nearly half the cost.`,
+            reasoning: `Copilot Business adds policy management, audit logs, and IP indemnity — governance features that matter when managing a developer team centrally. For a ${teamSize}-person team without compliance requirements, Pro at $10/seat provides the same coding performance at nearly half the cost.`,
             confidence: "high",
           };
         }
@@ -310,25 +477,25 @@ function evaluatePlanFit(
         statusLabel: "Well matched",
         isActionable: false,
         recommendedCostPerSeat: costPerSeat,
-        reasoning: `Copilot Business is the right tier ${atSeatCount(entry.seats)}. The policy management, audit logging, and IP indemnity features provide governance value that Pro plans can't offer.`,
+        reasoning: `Copilot Business is the right tier ${atSeatCount(entry.seats)}. Policy management, audit logs, and IP indemnity provide governance value that Pro can't offer at this org scale.`,
         confidence: "high",
       };
     }
 
     if (entry.planId === "pro") {
-      if (teamSize > 10) {
+      if (isLargeOrg || teamSize > 10) {
         const bizPlan = getPlanById("github_copilot", "business");
         if (bizPlan) {
           return {
             recommendationType: "upgrade_recommended",
             severity: "info",
-            statusLabel: "Consider upgrading",
+            statusLabel: "Procurement gap",
             isActionable: true,
             betterPlanId: "business",
             betterPlanName: "Business",
             recommendedCostPerSeat: bizPlan.monthlyPricePerSeat,
-            reasoning: `At a ${teamSize}-person org, Pro Copilot licenses become a compliance liability. Business at $19/seat adds IP indemnity, audit logs, and centralized policy controls — practically mandatory once you're building commercial software at this headcount.`,
-            confidence: "medium",
+            reasoning: `${seatsCurrentlyProvisioned(entry.seats)} on individual Pro Copilot in a ${teamSize}-person org creates real liability: no IP indemnity, no audit logs, no policy controls. Business at $19/seat is practically mandatory for commercial software development at this headcount.`,
+            confidence: "high",
           };
         }
       }
@@ -338,19 +505,84 @@ function evaluatePlanFit(
         statusLabel: "Optimized",
         isActionable: false,
         recommendedCostPerSeat: costPerSeat,
-        reasoning: `Copilot Pro is cost-efficient ${atSeatCount(entry.seats)}. At $10/seat, it delivers unlimited code completions, 300 premium requests, and full IDE integration without the governance overhead of Business.`,
+        reasoning: `Copilot Pro is cost-efficient ${atSeatCount(entry.seats)}. At $10/seat, it delivers unlimited completions, 300 premium requests, and full IDE integration without governance overhead.`,
         confidence: "high",
       };
     }
   }
 
   // ════════════════════════════════════════════════════════════════════
-  // CLAUDE — IDs: free, pro, max_5x, max_20x, team_standard,
-  //              team_premium, enterprise, api_direct
+  // CLAUDE
   // ════════════════════════════════════════════════════════════════════
   if (tool.id === "claude") {
-    // Max 20×: rare justification
+
+    if (entry.planId === "enterprise") {
+      // Enterprise is an annual-only contract — almost always appropriate when
+      // purchased. Flag only genuinely small orgs that may have over-bought.
+      if (teamSize < ENTERPRISE_OVERKILL_THRESHOLD) {
+        const teamPremium = getPlanById("claude", "team_premium");
+        if (teamPremium) {
+          return {
+            recommendationType: "enterprise_overkill",
+            severity: "savings",
+            statusLabel: "Enterprise overkill",
+            isActionable: true,
+            betterPlanId: "team_premium",
+            betterPlanName: "Team Premium",
+            recommendedCostPerSeat: teamPremium.monthlyPricePerSeat,
+            reasoning: `Claude Enterprise's 500K context, SCIM, HIPAA readiness, and 99.99% SLA are operationally meaningful at 50+ seats under active compliance requirements. For a ${teamSize}-person org without those mandates, Team Premium at $125/seat provides Claude Code with org-grade governance at a fraction of the annual commitment.`,
+            confidence: "medium",
+          };
+        }
+      }
+
+      // Verify scope: 25–49 engineers
+      if (teamSize < ENTERPRISE_VERIFY_THRESHOLD) {
+        const teamPremium = getPlanById("claude", "team_premium");
+        if (teamPremium) {
+          return {
+            recommendationType: "minor_opportunity",
+            severity: "info",
+            statusLabel: "Verify scope",
+            isActionable: true,
+            betterPlanId: "team_premium",
+            betterPlanName: "Team Premium",
+            recommendedCostPerSeat: teamPremium.monthlyPricePerSeat,
+            reasoning: `Claude Enterprise is an annual contract purchased for SSO, SCIM, audit logs, custom data retention, 500K context, and HIPAA readiness. At a ${teamSize}-person org, confirm those compliance features are actively required. If not, Team Premium at $125/seat provides Claude Code access with org-grade admin controls under a flexible monthly arrangement.`,
+            confidence: "medium",
+          };
+        }
+      }
+
+      // 50+ engineers: Enterprise is justified
+      return {
+        recommendationType: "strong_roi",
+        severity: "optimal",
+        statusLabel: "Enterprise justified",
+        isActionable: false,
+        recommendedCostPerSeat: costPerSeat,
+        reasoning: `Claude Enterprise is well-justified ${atSeatCount(entry.seats)} for a ${teamSize}-person org. SSO, SCIM, audit logs, custom data retention, 500K context, HIPAA readiness, and 99.99% SLA are genuine operational requirements at this scale — not optional overhead.`,
+        confidence: "high",
+      };
+    }
+
     if (entry.planId === "max_20x") {
+      if (isLargeOrg) {
+        const teamPremium = getPlanById("claude", "team_premium");
+        if (teamPremium) {
+          return {
+            recommendationType: "slight_overprovision",
+            severity: "savings",
+            statusLabel: "Wrong tier for org size",
+            isActionable: true,
+            betterPlanId: "team_premium",
+            betterPlanName: "Team Premium",
+            recommendedCostPerSeat: teamPremium.monthlyPricePerSeat,
+            reasoning: `Claude Max 20× at $200/seat is an individual subscription — no SSO, no central billing, no admin console. For a ${teamSize}-person org, Team Premium at $125/seat provides comparable Claude Code access with org-grade governance, saving $75/seat. For users who genuinely need 20× usage, mix Team Standard seats with a few Max seats for power users.`,
+            confidence: "high",
+          };
+        }
+      }
       const max5xPlan = getPlanById("claude", "max_5x");
       if (max5xPlan) {
         return {
@@ -361,14 +593,29 @@ function evaluatePlanFit(
           betterPlanId: "max_5x",
           betterPlanName: "Max 5×",
           recommendedCostPerSeat: max5xPlan.monthlyPricePerSeat,
-          reasoning: `Claude Max 20× at $200/seat targets developers running Claude Code agents all day on large codebases. Max 5× at $100/seat covers most power users. Track whether you're consistently hitting Max 5× limits before committing to the 2× premium — the $100/seat savings adds up fast across multiple seats.`,
+          reasoning: `Claude Max 20× at $200/seat targets developers running Claude Code agents all day on large codebases. Max 5× at $100/seat covers most power users. Track whether you're consistently hitting Max 5× limits before committing to the 2× premium.`,
           confidence: "medium",
         };
       }
     }
 
-    // Max 5×: justified for sustained heavy usage
     if (entry.planId === "max_5x") {
+      if (isLargeOrg) {
+        const teamPremium = getPlanById("claude", "team_premium");
+        if (teamPremium) {
+          return {
+            recommendationType: "upgrade_recommended",
+            severity: "info",
+            statusLabel: "Wrong tier for org size",
+            isActionable: true,
+            betterPlanId: "team_premium",
+            betterPlanName: "Team Premium",
+            recommendedCostPerSeat: teamPremium.monthlyPricePerSeat,
+            reasoning: `Claude Max 5× at $100/seat is an individual tier — no SSO, no admin console, no central billing. For a ${teamSize}-person org, Team Premium at $125/seat provides Claude Code with org-grade governance. The $25/seat premium pays for compliance posture and IT overhead reduction.`,
+            confidence: "high",
+          };
+        }
+      }
       const proPlan = getPlanById("claude", "pro");
       if (proPlan && entry.seats > 3) {
         return {
@@ -379,7 +626,7 @@ function evaluatePlanFit(
           betterPlanId: "pro",
           betterPlanName: "Pro",
           recommendedCostPerSeat: proPlan.monthlyPricePerSeat,
-          reasoning: `Claude Max 5× at $100/seat targets individual power users who routinely exhaust Pro's message windows. Across ${seatsCurrentlyProvisioned(entry.seats)}, usage rarely sustains Max-level throughput per seat. Claude Team Standard at $25/seat or Pro at $20/seat would deliver equivalent value at a fraction of the cost.`,
+          reasoning: `Claude Max 5× at $100/seat targets individual power users routinely exhausting Pro's message windows. Across ${seatsCurrentlyProvisioned(entry.seats)}, sustained Max-level usage per seat is rare. Team Standard at $25/seat or Pro at $20/seat would deliver equivalent value at a fraction of the cost.`,
           confidence: "medium",
         };
       }
@@ -392,7 +639,7 @@ function evaluatePlanFit(
           betterPlanId: "pro",
           betterPlanName: "Pro",
           recommendedCostPerSeat: proPlan.monthlyPricePerSeat,
-          reasoning: `Claude Max 5×'s value proposition is sustained high-volume usage — developers running long agentic tasks or analysts processing large document batches. For ${useCase} workflows, Pro's limits are rarely hit in practice. Downgrading saves $80/seat/month with negligible day-to-day difference.`,
+          reasoning: `Claude Max 5× targets sustained high-volume usage — long agentic tasks or large document batches. For ${useCase} workflows, Pro's limits are rarely hit in practice. Downgrading saves $80/seat/month with negligible day-to-day difference.`,
           confidence: "medium",
         };
       }
@@ -402,30 +649,28 @@ function evaluatePlanFit(
         statusLabel: "Justified",
         isActionable: false,
         recommendedCostPerSeat: costPerSeat,
-        reasoning: `Claude Max 5× is appropriate for your use case. High-throughput ${useCase} workflows regularly exhaust Pro's limits, and the 5× usage headroom translates directly to uninterrupted productivity.`,
+        reasoning: `Claude Max 5× is appropriate for your use case. High-throughput ${useCase} workflows regularly exhaust Pro's limits — the 5× headroom translates directly to uninterrupted productivity.`,
         confidence: "medium",
       };
     }
 
-    // Team Premium: justified only when most seats need Claude Code
     if (entry.planId === "team_premium") {
-      const teamStandardPlan = getPlanById("claude", "team_standard");
-      if (teamStandardPlan) {
+      const teamStandard = getPlanById("claude", "team_standard");
+      if (teamStandard) {
         return {
           recommendationType: "minor_opportunity",
           severity: "info",
           statusLabel: "Optimize seat mix",
           isActionable: true,
           betterPlanId: "team_standard",
-          betterPlanName: "Team Standard",
-          recommendedCostPerSeat: teamStandardPlan.monthlyPricePerSeat,
-          reasoning: `Claude Team Premium at $125/seat includes Claude Code and Cowork. If fewer than half your ${entry.seats} seats actively use Claude Code, mix Standard ($25) and Premium ($125) seats to reduce cost — Anthropic allows mixing within a Team plan. The $100/seat differential adds up quickly.`,
+          betterPlanName: "Team Standard (mixed)",
+          recommendedCostPerSeat: teamStandard.monthlyPricePerSeat * 0.6 + 125 * 0.4,
+          reasoning: `Claude Team Premium at $125/seat includes Claude Code and Cowork. Across ${seatsCurrentlyProvisioned(entry.seats)}, fewer than half typically need Claude Code daily. Anthropic allows mixing seat tiers within a Team plan — assigning Premium only to active Code users and Standard ($25/seat) to the rest can cut total cost 40–60% with no functional loss.`,
           confidence: "medium",
         };
       }
     }
 
-    // Team Standard: well-suited for collaborative teams 5+
     if (entry.planId === "team_standard") {
       if (entry.seats === 1) {
         const proPlan = getPlanById("claude", "pro");
@@ -438,19 +683,19 @@ function evaluatePlanFit(
             betterPlanId: "pro",
             betterPlanName: "Pro",
             recommendedCostPerSeat: proPlan.monthlyPricePerSeat,
-            reasoning: `Claude Team Standard adds shared workspaces, admin controls, and SSO — features that require multiple users to generate value. With only 1 seat assigned, you're paying a $5/month team premium for features you can't utilize. Pro at $20/seat delivers identical model access.`,
+            reasoning: `Claude Team Standard adds shared workspaces, admin controls, and SSO — features requiring multiple users to generate value. With 1 seat assigned, Pro at $20/seat delivers identical model access without the $5/month team premium.`,
             confidence: "high",
           };
         }
       }
-      if (entry.seats < 5) {
+      if (entry.seats < 5 && (orgTier === "solo" || orgTier === "small")) {
         return {
           recommendationType: "minor_opportunity",
           severity: "info",
           statusLabel: "Below minimum value threshold",
           isActionable: true,
           recommendedCostPerSeat: costPerSeat,
-          reasoning: `Claude Team has a 5-seat minimum and is optimized for collaborative workspaces with shared projects, SSO, and central billing. With ${seatsCurrentlyProvisioned(entry.seats)}, you're meeting the floor but not extracting full value. If your team isn't actively using shared Projects or SSO, individual Pro plans may be more cost-effective.`,
+          reasoning: `Claude Team has a 5-seat minimum and is optimized for collaborative workspaces with shared projects, SSO, and central billing. With ${seatsCurrentlyProvisioned(entry.seats)}, you're meeting the floor but not extracting full value. If your team isn't actively using shared Projects, individual Pro plans may be more cost-effective.`,
           confidence: "medium",
         };
       }
@@ -460,13 +705,28 @@ function evaluatePlanFit(
         statusLabel: "Well matched",
         isActionable: false,
         recommendedCostPerSeat: costPerSeat,
-        reasoning: `Claude Team Standard is well-suited for ${seatsCurrentlyAssigned(entry.seats)}. At $25/seat, the SSO, central billing, Microsoft 365 + Slack integrations, and 200K context window are appropriate at this deployment size and provide measurable collaboration value.`,
+        reasoning: `Claude Team Standard is well-suited for ${seatsCurrentlyAssigned(entry.seats)}. At $25/seat, SSO, central billing, Microsoft 365 + Slack integrations, and 200K context provide measurable collaboration value at this deployment size.`,
         confidence: "high",
       };
     }
 
-    // Pro: the sweet spot for individual professional use
     if (entry.planId === "pro") {
+      if (isLargeOrg) {
+        const teamPlan = getPlanById("claude", "team_standard");
+        if (teamPlan) {
+          return {
+            recommendationType: "upgrade_recommended",
+            severity: "info",
+            statusLabel: "Procurement gap",
+            isActionable: true,
+            betterPlanId: "team_standard",
+            betterPlanName: "Team Standard",
+            recommendedCostPerSeat: teamPlan.monthlyPricePerSeat,
+            reasoning: `${seatsCurrentlyProvisioned(entry.seats)} on individual Pro plans in a ${teamSize}-person org creates governance risk: no SSO, no admin console, no usage visibility, no central billing. Team Standard at $25/seat consolidates into a single procurement contract — the $5/seat premium pays for compliance posture.`,
+            confidence: "high",
+          };
+        }
+      }
       if (entry.seats > 8 && useCase !== "coding") {
         const teamPlan = getPlanById("claude", "team_standard");
         if (teamPlan) {
@@ -478,7 +738,7 @@ function evaluatePlanFit(
             betterPlanId: "team_standard",
             betterPlanName: "Team Standard",
             recommendedCostPerSeat: teamPlan.monthlyPricePerSeat,
-            reasoning: `With ${seatsCurrentlyProvisioned(entry.seats)} on Pro at $20/seat, you're at the scale where Claude Team Standard at $25/seat starts delivering structural value: SSO, shared Projects, admin-level usage visibility, central billing, and Microsoft 365/Slack integrations. The $5/seat premium pays for itself in operational overhead reduction.`,
+            reasoning: `With ${seatsCurrentlyProvisioned(entry.seats)} on Pro at $20/seat, Team Standard at $25/seat starts delivering structural value: SSO, shared Projects, admin visibility, central billing. The $5/seat premium pays for itself in operational overhead reduction.`,
             confidence: "medium",
           };
         }
@@ -489,30 +749,102 @@ function evaluatePlanFit(
         statusLabel: "Optimized",
         isActionable: false,
         recommendedCostPerSeat: costPerSeat,
-        reasoning: `Claude Pro is well-calibrated for your current usage. At $20/seat, it provides Opus 4.6 + Sonnet 4.6 access, Claude Code, and 5× the usage of Free without the team overhead of a workspace plan.`,
+        reasoning: `Claude Pro is well-calibrated for your scale. At $20/seat, Opus 4.6 + Sonnet 4.6 access, Claude Code, and 5× Free's usage without team overhead.`,
         confidence: "high",
-      };
-    }
-
-    if (entry.planId === "enterprise") {
-      return {
-        recommendationType: "strong_roi",
-        severity: "optimal",
-        statusLabel: "Enterprise justified",
-        isActionable: false,
-        recommendedCostPerSeat: costPerSeat,
-        reasoning: `Claude Enterprise is purchased for SSO, SCIM, audit logs, custom data retention, 500K context window, HIPAA readiness, and 99.99% SLA. These features carry real organizational value and require annual contracts — only worth evaluating at 50+ seats with compliance requirements.`,
-        confidence: "low",
       };
     }
   }
 
   // ════════════════════════════════════════════════════════════════════
-  // CHATGPT — IDs: free, plus, pro, business, enterprise, api_direct
+  // CHATGPT
   // ════════════════════════════════════════════════════════════════════
   if (tool.id === "chatgpt") {
-    // Pro: $200/seat — only for unlimited reasoning model usage
+
+    if (entry.planId === "enterprise") {
+      // True overkill: small orgs that clearly don't need Enterprise scale
+      if (teamSize < ENTERPRISE_OVERKILL_THRESHOLD) {
+        const businessPlan = getPlanById("chatgpt", "business");
+        if (businessPlan) {
+          return {
+            recommendationType: "enterprise_overkill",
+            severity: "savings",
+            statusLabel: "Enterprise overkill",
+            isActionable: true,
+            betterPlanId: "business",
+            betterPlanName: "Business",
+            recommendedCostPerSeat: businessPlan.monthlyPricePerSeat,
+            reasoning: `ChatGPT Enterprise targets organizations with EKM, SCIM, advanced analytics, and annual contracts — features that pay off at 100+ seats or under regulated workloads. For a ${teamSize}-person org, Business at $20/seat (annual) provides equivalent SSO, training-data exclusion, and SOC 2 compliance at a fraction of the cost.`,
+            confidence: "high",
+          };
+        }
+      }
+
+      // Verify scope: 25–49 engineers
+      if (teamSize < ENTERPRISE_VERIFY_THRESHOLD) {
+        const businessPlan = getPlanById("chatgpt", "business");
+        if (businessPlan) {
+          return {
+            recommendationType: "minor_opportunity",
+            severity: "info",
+            statusLabel: "Verify scope",
+            isActionable: true,
+            betterPlanId: "business",
+            betterPlanName: "Business",
+            recommendedCostPerSeat: businessPlan.monthlyPricePerSeat,
+            reasoning: `ChatGPT Enterprise's premium features — EKM, SCIM, custom data retention, advanced analytics — are most valuable at 100+ seats or under regulated workloads. For a ${teamSize}-person org, audit whether all ${entry.seats} Enterprise seats actively use these capabilities. A mixed deployment of Enterprise (for compliance-bound users) and Business at $20/seat (for general users) often reduces cost significantly without functional loss.`,
+            confidence: "medium",
+          };
+        }
+      }
+
+      // 50+ engineers: Enterprise is appropriate — but still frame "midmarket"
+      // as worth auditing given how expensive Enterprise is relative to Business
+      if (orgTier === "midmarket") {
+        const businessPlan = getPlanById("chatgpt", "business");
+        if (businessPlan) {
+          return {
+            recommendationType: "minor_opportunity",
+            severity: "info",
+            statusLabel: "Verify scope",
+            isActionable: true,
+            betterPlanId: "business",
+            betterPlanName: "Business",
+            recommendedCostPerSeat: businessPlan.monthlyPricePerSeat,
+            reasoning: `ChatGPT Enterprise's premium features — EKM, SCIM, custom data retention, advanced analytics — deliver the most value at 500+ seats or under regulated workloads. For a ${teamSize}-person org, confirm that all ${entry.seats} Enterprise seats actively use compliance-specific features. A mixed deployment — Enterprise for regulated users, Business at $20/seat for general users — often reduces cost 40–60% without functional loss.`,
+            confidence: "medium",
+          };
+        }
+      }
+
+      // True enterprise scale: affirm
+      return {
+        recommendationType: "strong_roi",
+        severity: "optimal",
+        statusLabel: "Well matched",
+        isActionable: false,
+        recommendedCostPerSeat: costPerSeat,
+        reasoning: `ChatGPT Enterprise is appropriate ${atSeatCount(entry.seats)} for a ${teamSize}-person org. Unlimited GPT-5.4, custom data retention, EKM, SCIM, role-based access, and dedicated support deliver proportional value at this scale.`,
+        confidence: "medium",
+      };
+    }
+
     if (entry.planId === "pro") {
+      if (isLargeOrg) {
+        const businessPlan = getPlanById("chatgpt", "business");
+        if (businessPlan) {
+          return {
+            recommendationType: "slight_overprovision",
+            severity: "savings",
+            statusLabel: "Wrong tier for org size",
+            isActionable: true,
+            betterPlanId: "business",
+            betterPlanName: "Business",
+            recommendedCostPerSeat: businessPlan.monthlyPricePerSeat,
+            reasoning: `ChatGPT Pro at $200/seat is an individual subscription — no SSO, no admin console, no SOC 2 compliance, no training-data exclusion, no procurement contract. For a ${teamSize}-person org, Business at $20/seat provides org-grade governance with full GPT-5.5 access. For specific power users who genuinely need unlimited reasoning models, mix Business seats with a few Pro seats — but don't standardize an org on Pro.`,
+            confidence: "high",
+          };
+        }
+      }
       const plusPlan = getPlanById("chatgpt", "plus");
       if (plusPlan) {
         return {
@@ -523,13 +855,12 @@ function evaluatePlanFit(
           betterPlanId: "plus",
           betterPlanName: "Plus",
           recommendedCostPerSeat: plusPlan.monthlyPricePerSeat,
-          reasoning: `ChatGPT Pro at $200/seat is justified only for users running unlimited GPT-5.5, o3, and o4-mini-high reasoning models with 1M token context daily. For typical professional use, Plus at $20/seat delivers the same GPT-5.5/5.4 access, Deep Research, DALL-E, and Agent Mode at 10% of the cost.`,
+          reasoning: `ChatGPT Pro at $200/seat is justified only for users running unlimited GPT-5.5, o3, and o4-mini-high reasoning models with 1M context daily. For typical professional use, Plus at $20/seat delivers the same GPT-5.5/5.4 access, Deep Research, and Agent Mode at 10% of the cost.`,
           confidence: "medium",
         };
       }
     }
 
-    // Business: most teams' sweet spot
     if (entry.planId === "business") {
       if (entry.seats === 1) {
         const plusPlan = getPlanById("chatgpt", "plus");
@@ -542,27 +873,40 @@ function evaluatePlanFit(
             betterPlanId: "plus",
             betterPlanName: "Plus",
             recommendedCostPerSeat: plusPlan.monthlyPricePerSeat,
-            reasoning: `ChatGPT Business's workspace, SSO, and admin features require multiple collaborators to generate value. With only 1 seat assigned, Plus at $20/seat delivers identical model access and core capabilities — the Business premium adds nothing for solo use.`,
+            reasoning: `ChatGPT Business's workspace, SSO, and admin features need multiple collaborators. With 1 seat, Plus at $20/seat delivers identical model access — Business adds nothing for solo use.`,
             confidence: "high",
           };
         }
       }
-      if (entry.seats >= 2) {
-        return {
-          recommendationType: "already_optimal",
-          severity: "optimal",
-          statusLabel: "Well matched",
-          isActionable: false,
-          recommendedCostPerSeat: costPerSeat,
-          reasoning: `ChatGPT Business provides excellent value ${atSeatCount(entry.seats)}. At $20/seat (annual) or $25/seat (monthly), you get shared workspaces, SAML SSO, SOC 2 Type II compliance, 60+ app integrations (Slack, Drive, GitHub), and training-data exclusion — meaningfully better than Plus for collaborative use.`,
-          confidence: "high",
-        };
-      }
+      return {
+        recommendationType: "already_optimal",
+        severity: "optimal",
+        statusLabel: "Well matched",
+        isActionable: false,
+        recommendedCostPerSeat: costPerSeat,
+        reasoning: `ChatGPT Business provides excellent value ${atSeatCount(entry.seats)}. At $20/seat (annual), shared workspaces, SAML SSO, SOC 2 Type II, 60+ app integrations, and training-data exclusion meaningfully outperform Plus for collaborative use.`,
+        confidence: "high",
+      };
     }
 
-    // Plus: solid for individuals
     if (entry.planId === "plus") {
-      if (teamSize > 5) {
+      if (isLargeOrg) {
+        const businessPlan = getPlanById("chatgpt", "business");
+        if (businessPlan) {
+          return {
+            recommendationType: "upgrade_recommended",
+            severity: "info",
+            statusLabel: "Procurement gap",
+            isActionable: true,
+            betterPlanId: "business",
+            betterPlanName: "Business",
+            recommendedCostPerSeat: businessPlan.monthlyPricePerSeat,
+            reasoning: `${seatsCurrentlyProvisioned(entry.seats)} on individual Plus subscriptions in a ${teamSize}-person org creates real liability: conversations may be used for training, no SSO, no admin controls, no SOC 2 compliance. Business is now $20/seat (annual) — the same price as Plus — with training-data exclusion and SAML SSO. Strict upgrade with zero cost penalty.`,
+            confidence: "high",
+          };
+        }
+      }
+      if (teamSize > 5 && teamSize <= 25) {
         const businessPlan = getPlanById("chatgpt", "business");
         if (businessPlan) {
           return {
@@ -573,7 +917,7 @@ function evaluatePlanFit(
             betterPlanId: "business",
             betterPlanName: "Business",
             recommendedCostPerSeat: businessPlan.monthlyPricePerSeat,
-            reasoning: `Across a ${teamSize}-person org on ChatGPT Plus, you're missing the data privacy guarantees, SSO, and admin controls that Business provides. Business is now $20/seat (annual) — the same price as Plus — with training-data exclusion, SAML SSO, and 60+ app integrations. Strict upgrade with no cost penalty.`,
+            reasoning: `Across a ${teamSize}-person team on Plus, you're missing the data privacy and admin controls Business provides. Business at $20/seat (annual) — same price as Plus — adds training-data exclusion, SAML SSO, and 60+ integrations.`,
             confidence: "high",
           };
         }
@@ -584,48 +928,34 @@ function evaluatePlanFit(
         statusLabel: "Optimized",
         isActionable: false,
         recommendedCostPerSeat: costPerSeat,
-        reasoning: `ChatGPT Plus is well-suited for your current scale. At $20/seat, it provides full GPT-5.5 + GPT-5.4 access, Deep Research, DALL-E image generation, Agent Mode, and Custom GPTs.`,
+        reasoning: `ChatGPT Plus is well-suited for your scale. At $20/seat, full GPT-5.5 + GPT-5.4, Deep Research, DALL-E, Agent Mode, and Custom GPTs.`,
         confidence: "high",
-      };
-    }
-
-    // Enterprise: justified only at scale or specialized compliance needs
-    if (entry.planId === "enterprise") {
-      if (entry.seats < 10) {
-        const businessPlan = getPlanById("chatgpt", "business");
-        if (businessPlan) {
-          return {
-            recommendationType: "enterprise_overkill",
-            severity: "savings",
-            statusLabel: "Enterprise overkill",
-            isActionable: true,
-            betterPlanId: "business",
-            betterPlanName: "Business",
-            recommendedCostPerSeat: businessPlan.monthlyPricePerSeat,
-            reasoning: `ChatGPT Enterprise targets organizations with EKM, SCIM, advanced analytics, and 500+ seats — typically requiring annual contracts. With ${seatsCurrentlyProvisioned(entry.seats)}, Business at $20/seat (annual) provides equivalent SSO, training-data exclusion, and SOC 2 compliance at roughly one-third the cost.`,
-            confidence: "high",
-          };
-        }
-      }
-      return {
-        recommendationType: "strong_roi",
-        severity: "optimal",
-        statusLabel: "Well matched",
-        isActionable: false,
-        recommendedCostPerSeat: costPerSeat,
-        reasoning: `ChatGPT Enterprise is appropriate ${atSeatCount(entry.seats)}. The unlimited GPT-5.4, custom data retention, EKM, SCIM, role-based access, and dedicated support deliver proportional value at this scale.`,
-        confidence: "medium",
       };
     }
   }
 
   // ════════════════════════════════════════════════════════════════════
-  // GEMINI — IDs: free, ai_plus, ai_pro, ai_ultra,
-  //              workspace_standard, workspace_plus, api
+  // GEMINI
   // ════════════════════════════════════════════════════════════════════
   if (tool.id === "gemini") {
-    // AI Ultra: $250/seat — rare justification
+
     if (entry.planId === "ai_ultra") {
+      if (isLargeOrg) {
+        const workspaceStdPlan = getPlanById("gemini", "workspace_standard");
+        if (workspaceStdPlan) {
+          return {
+            recommendationType: "slight_overprovision",
+            severity: "savings",
+            statusLabel: "Wrong tier for org size",
+            isActionable: true,
+            betterPlanId: "workspace_standard",
+            betterPlanName: "Workspace Business Standard",
+            recommendedCostPerSeat: workspaceStdPlan.monthlyPricePerSeat,
+            reasoning: `Google AI Ultra at $249.99/seat is a consumer subscription — no admin console, no central billing, no Workspace integration. For a ${teamSize}-person org, Workspace Business Standard at $14/seat bundles Gemini AI across all Workspace apps with admin controls. For specific users needing Deep Think 3.1 daily, mix Workspace seats with a few AI Ultra subscriptions.`,
+            confidence: "high",
+          };
+        }
+      }
       const aiProPlan = getPlanById("gemini", "ai_pro");
       if (aiProPlan) {
         return {
@@ -636,13 +966,12 @@ function evaluatePlanFit(
           betterPlanId: "ai_pro",
           betterPlanName: "Google AI Pro",
           recommendedCostPerSeat: aiProPlan.monthlyPricePerSeat,
-          reasoning: `Google AI Ultra at $249.99/seat targets users running Deep Think 3.1 daily and 120 Deep Research queries per day. AI Pro at $19.99/seat covers Gemini 3.1 Pro (1M token context), 100 Pro prompts/day, and NotebookLM Plus — sufficient for the vast majority of professional use. The $230/seat differential rarely pays off.`,
+          reasoning: `Google AI Ultra at $249.99/seat targets users running Deep Think 3.1 daily and 120 Deep Research queries per day. AI Pro at $19.99/seat covers Gemini 3.1 Pro (1M context), 100 Pro prompts/day, and NotebookLM Plus — sufficient for the vast majority of professional use.`,
           confidence: "medium",
         };
       }
     }
 
-    // Workspace Plus: justified only for legal/compliance/large meetings
     if (entry.planId === "workspace_plus") {
       const workspaceStdPlan = getPlanById("gemini", "workspace_standard");
       if (workspaceStdPlan) {
@@ -654,13 +983,12 @@ function evaluatePlanFit(
           betterPlanId: "workspace_standard",
           betterPlanName: "Workspace Business Standard",
           recommendedCostPerSeat: workspaceStdPlan.monthlyPricePerSeat,
-          reasoning: `Workspace Business Plus at $22/seat adds Vault (eDiscovery), 5 TB storage, 500-participant meetings, and enhanced security. Upgrade only if legal hold, compliance archival, or large all-hands meetings are an active requirement. Otherwise, Standard at $14/seat includes the same Gemini AI bundled across all Workspace apps.`,
+          reasoning: `Workspace Business Plus at $22/seat adds Vault (eDiscovery), 5 TB storage, 500-participant meetings, and enhanced security. Upgrade only if legal hold, compliance archival, or large all-hands meetings are an active requirement. Standard at $14/seat includes the same Gemini AI bundled across all Workspace apps.`,
           confidence: "medium",
         };
       }
     }
 
-    // Workspace Standard: solid baseline for Workspace teams
     if (entry.planId === "workspace_standard") {
       if (useCase === "coding") {
         return {
@@ -669,7 +997,7 @@ function evaluatePlanFit(
           statusLabel: "Use case mismatch",
           isActionable: true,
           recommendedCostPerSeat: costPerSeat,
-          reasoning: `Workspace Business Standard at $14/seat bundles Gemini for Docs, Sheets, and Meet integration — not code generation. For a team primarily using AI for coding, Cursor Pro or GitHub Copilot delivers materially better output for less cost. Keep Workspace for productivity apps if you need Drive/Meet, but supplement with a dedicated coding assistant.`,
+          reasoning: `Workspace Business Standard at $14/seat bundles Gemini for Docs, Sheets, and Meet — not code generation. For a coding-focused team, Cursor Pro or GitHub Copilot delivers materially better output for less cost. Keep Workspace if you need Drive/Meet, but supplement with a dedicated coding assistant.`,
           confidence: "medium",
         };
       }
@@ -679,25 +1007,39 @@ function evaluatePlanFit(
         statusLabel: "Well matched",
         isActionable: false,
         recommendedCostPerSeat: costPerSeat,
-        reasoning: `Workspace Business Standard at $14/seat is well-suited for ${useCase} workflows. Gemini AI is now bundled across Docs, Sheets, Slides, Meet, and Drive — previously requiring a $20–30 add-on. Strong value for Workspace-embedded teams.`,
+        reasoning: `Workspace Business Standard at $14/seat is well-suited for ${useCase} workflows. Gemini AI is now bundled across Docs, Sheets, Slides, Meet, and Drive — previously requiring a $20–30 add-on.`,
         confidence: "high",
       };
     }
 
-    // AI Pro: standalone Gemini for individuals
     if (entry.planId === "ai_pro") {
+      if (isLargeOrg) {
+        const workspaceStdPlan = getPlanById("gemini", "workspace_standard");
+        if (workspaceStdPlan) {
+          return {
+            recommendationType: "upgrade_recommended",
+            severity: "info",
+            statusLabel: "Procurement gap",
+            isActionable: true,
+            betterPlanId: "workspace_standard",
+            betterPlanName: "Workspace Business Standard",
+            recommendedCostPerSeat: workspaceStdPlan.monthlyPricePerSeat,
+            reasoning: `${seatsCurrentlyProvisioned(entry.seats)} on individual AI Pro in a ${teamSize}-person org creates governance risk and is more expensive than necessary. Workspace Business Standard at $14/seat bundles Gemini across all Workspace apps with admin controls — $6/seat cheaper with org-grade governance.`,
+            confidence: "high",
+          };
+        }
+      }
       return {
         recommendationType: "already_optimal",
         severity: "optimal",
         statusLabel: "Reasonable",
         isActionable: false,
         recommendedCostPerSeat: costPerSeat,
-        reasoning: `Google AI Pro at $19.99/seat provides Gemini 3.1 Pro with 1M token context, ~100 Pro prompts/day, NotebookLM Plus, Veo 3.1 Lite video generation, and Deep Research. Competitive value if your team uses Gemini standalone — note Workspace Business Standard at $14 includes Gemini bundled if you also need Drive/Docs.`,
+        reasoning: `Google AI Pro at $19.99/seat provides Gemini 3.1 Pro with 1M context, ~100 Pro prompts/day, NotebookLM Plus, and Deep Research — competitive standalone Gemini access.`,
         confidence: "medium",
       };
     }
 
-    // AI Plus: entry-level paid tier
     if (entry.planId === "ai_plus") {
       return {
         recommendationType: "already_optimal",
@@ -705,18 +1047,79 @@ function evaluatePlanFit(
         statusLabel: "Optimized",
         isActionable: false,
         recommendedCostPerSeat: costPerSeat,
-        reasoning: `Google AI Plus at $7.99/seat is a strong entry-level tier — 128K context, 200 monthly AI credits, expanded NotebookLM, and 200 GB storage. Right-sized for occasional Gemini use beyond the Free tier.`,
+        reasoning: `Google AI Plus at $7.99/seat is a strong entry-level tier — 128K context, 200 monthly AI credits, expanded NotebookLM, and 200 GB storage. Right-sized for occasional Gemini use beyond Free.`,
         confidence: "high",
       };
     }
   }
 
   // ════════════════════════════════════════════════════════════════════
-  // WINDSURF — IDs: free, pro, max, teams, enterprise
+  // WINDSURF
   // ════════════════════════════════════════════════════════════════════
   if (tool.id === "windsurf") {
-    // Max: $200/seat — rare justification
+
+    if (entry.planId === "enterprise") {
+      const teamsPlan = getPlanById("windsurf", "teams");
+
+      // True overkill: small orgs
+      if (teamSize < ENTERPRISE_OVERKILL_THRESHOLD && teamsPlan) {
+        return {
+          recommendationType: "enterprise_overkill",
+          severity: "savings",
+          statusLabel: "Enterprise overkill",
+          isActionable: true,
+          betterPlanId: "teams",
+          betterPlanName: "Teams",
+          recommendedCostPerSeat: teamsPlan.monthlyPricePerSeat,
+          reasoning: `Windsurf Enterprise's SSO + RBAC, Zero Data Retention, hybrid deployment, and 1,000+ credits/user are operationally meaningful at 50+ engineers under compliance mandates. For a ${teamSize}-person org, Teams at $40/seat provides centralized billing, admin dashboard, and pooled credits without the Enterprise premium.`,
+          confidence: "high",
+        };
+      }
+
+      // Verify scope: 25–49 engineers
+      if (teamSize < ENTERPRISE_VERIFY_THRESHOLD && teamsPlan) {
+        return {
+          recommendationType: "minor_opportunity",
+          severity: "info",
+          statusLabel: "Verify scope",
+          isActionable: true,
+          betterPlanId: "teams",
+          betterPlanName: "Teams",
+          recommendedCostPerSeat: teamsPlan.monthlyPricePerSeat,
+          reasoning: `Windsurf Enterprise is reasonable at a ${teamSize}-person org, but its key differentiators — Zero Data Retention, hybrid deployment, SSO + RBAC, and 1,000+ credits/user — are most impactful at 50+ engineers under active compliance requirements. If those aren't current operational needs, Teams at $40/seat delivers centralized billing, admin dashboard, and analytics at a meaningful discount. Review before next renewal.`,
+          confidence: "medium",
+        };
+      }
+
+      // 50+ engineers: Enterprise is justified
+      return {
+        recommendationType: "strong_roi",
+        severity: "optimal",
+        statusLabel: "Enterprise justified",
+        isActionable: false,
+        recommendedCostPerSeat: costPerSeat,
+        reasoning: `Windsurf Enterprise is well-justified ${atSeatCount(entry.seats)} for a ${teamSize}-person org. SSO + RBAC, Zero Data Retention, hybrid deployment, and 1,000+ credits/user are operational requirements at this scale — not optional overhead.`,
+        confidence: "high",
+      };
+    }
+
     if (entry.planId === "max") {
+      if (isLargeOrg) {
+        const teamsPlan = getPlanById("windsurf", "teams");
+        if (teamsPlan) {
+          return {
+            recommendationType: "slight_overprovision",
+            severity: "savings",
+            statusLabel: "Wrong tier for org size",
+            isActionable: true,
+            betterPlanId: "teams",
+            betterPlanName: "Teams",
+            recommendedCostPerSeat: teamsPlan.monthlyPricePerSeat,
+            reasoning: `Windsurf Max at $200/seat is an individual subscription — no admin dashboard, no central billing, no SSO. For a ${teamSize}-person org, Teams at $40/seat provides org-grade governance and pooled add-on credits. For specific users with sustained heavy agentic workflows, mix Teams seats with a few Max subscriptions.`,
+            confidence: "high",
+          };
+        }
+      }
       const proPlan = getPlanById("windsurf", "pro");
       if (proPlan) {
         return {
@@ -727,14 +1130,14 @@ function evaluatePlanFit(
           betterPlanId: "pro",
           betterPlanName: "Pro",
           recommendedCostPerSeat: proPlan.monthlyPricePerSeat,
-          reasoning: `Windsurf Max at $200/seat targets all-day heavy agentic coding workflows — 20× the usage of Pro. Pro at $20/seat covers the majority of professional developers. Only upgrade after consistently hitting Pro quota limits — the $180/seat savings adds up quickly.`,
+          reasoning: `Windsurf Max at $200/seat targets all-day heavy agentic coding — 20× the usage of Pro. Pro at $20/seat covers most professional developers. Only upgrade after consistently hitting Pro quota limits.`,
           confidence: "medium",
         };
       }
     }
 
     if (entry.planId === "teams") {
-      if (entry.seats < 5) {
+      if ((orgTier === "solo" || orgTier === "small") && entry.seats < 5) {
         const proPlan = getPlanById("windsurf", "pro");
         if (proPlan) {
           return {
@@ -745,7 +1148,7 @@ function evaluatePlanFit(
             betterPlanId: "pro",
             betterPlanName: "Pro",
             recommendedCostPerSeat: proPlan.monthlyPricePerSeat,
-            reasoning: `Windsurf Teams at $40/seat adds centralized billing, admin dashboard, analytics, and pooled add-on credits — features that justify themselves at 5+ engineers. With ${seatsCurrentlyProvisioned(entry.seats)}, the admin overhead isn't proportional. Pro at $20/seat delivers identical AI performance without the team management layer.`,
+            reasoning: `Windsurf Teams at $40/seat adds centralized billing, admin dashboard, and pooled credits — features that earn ROI at 5+ engineers. With ${seatsCurrentlyProvisioned(entry.seats)} in a ${teamSize}-person team, individual Pro at $20/seat delivers identical AI performance without the team layer.`,
             confidence: "high",
           };
         }
@@ -756,37 +1159,41 @@ function evaluatePlanFit(
         statusLabel: "Well matched",
         isActionable: false,
         recommendedCostPerSeat: costPerSeat,
-        reasoning: `Windsurf Teams is appropriate ${atSeatCount(entry.seats)}. At $40/seat, the centralized billing, admin dashboard, analytics, and pooled add-on credits provide genuine value at this deployment size for engineering managers tracking AI tool adoption.`,
+        reasoning: `Windsurf Teams is appropriate for ${seatsCurrentlyAssigned(entry.seats)} in a ${teamSize}-person organization. At $40/seat, centralized billing, admin dashboard, analytics, and pooled add-on credits are operational requirements at this scale.`,
         confidence: "high",
       };
     }
 
     if (entry.planId === "pro") {
+      if (isLargeOrg) {
+        const teamsPlan = getPlanById("windsurf", "teams");
+        if (teamsPlan) {
+          return {
+            recommendationType: "upgrade_recommended",
+            severity: "info",
+            statusLabel: "Procurement gap",
+            isActionable: true,
+            betterPlanId: "teams",
+            betterPlanName: "Teams",
+            recommendedCostPerSeat: teamsPlan.monthlyPricePerSeat,
+            reasoning: `${seatsCurrentlyProvisioned(entry.seats)} on individual Pro in a ${teamSize}-person org creates governance risk: no centralized billing, no admin dashboard, no SSO option, no usage visibility. Teams at $40/seat consolidates into a single procurement contract — the $20/seat premium pays for IT overhead reduction.`,
+            confidence: "high",
+          };
+        }
+      }
       return {
         recommendationType: "already_optimal",
         severity: "optimal",
         statusLabel: "Strong value",
         isActionable: false,
         recommendedCostPerSeat: costPerSeat,
-        reasoning: `Windsurf Pro at $20/seat offers a strong price-to-performance ratio for AI coding assistants. Standard prompt credit quota with SWE-1.5 and frontier model access (Claude, GPT, Gemini at API price) covers most professional developer workflows.`,
+        reasoning: `Windsurf Pro at $20/seat offers a strong price-to-performance ratio. Standard prompt credit quota with SWE-1.5 and frontier model access (Claude, GPT, Gemini at API price) covers most professional developer workflows.`,
         confidence: "high",
-      };
-    }
-
-    if (entry.planId === "enterprise") {
-      return {
-        recommendationType: "strong_roi",
-        severity: "optimal",
-        statusLabel: "Enterprise justified",
-        isActionable: false,
-        recommendedCostPerSeat: costPerSeat,
-        reasoning: `Windsurf Enterprise is purchased for SSO + RBAC, Zero Data Retention, hybrid deployment, and 1,000+ credits per user (double Teams). These features justify themselves at 20+ engineers under compliance mandates.`,
-        confidence: "low",
       };
     }
   }
 
-  // ─── Default: optimal ────────────────────────────────────────────────────
+  // ─── Default ───────────────────────────────────────────────────────────
   return {
     recommendationType: "already_optimal",
     severity: "optimal",
@@ -799,7 +1206,6 @@ function evaluatePlanFit(
 }
 
 // ─── Credits Evaluation ───────────────────────────────────────────────────────
-
 function evaluateCredits(entry: ToolEntry): {
   suggest: boolean;
   discount: number;
@@ -810,19 +1216,23 @@ function evaluateCredits(entry: ToolEntry): {
     return { suggest: false, discount: 0, reasoning: "" };
   }
 
-  const discount = entry.monthlySpend >= 1000 ? 0.35 : entry.monthlySpend >= 500 ? 0.30 : 0.25;
+  const discount =
+    entry.monthlySpend >= 1000 ? 0.35 : entry.monthlySpend >= 500 ? 0.30 : 0.25;
   const toolName = entry.toolId === "anthropic_api" ? "Anthropic" : "OpenAI";
 
   return {
     suggest: true,
     discount,
-    reasoning: `At $${entry.monthlySpend}/mo in ${toolName} API spend, you qualify for pre-purchased credit discounts of ${Math.round(discount * 100)}% below retail rates. Credits are purchased in advance from companies that over-forecasted usage — same API, same models, meaningfully lower cost. The discount compounds significantly at your volume: $${Math.round(entry.monthlySpend * discount * 12).toLocaleString()} in annual savings.`,
+    reasoning: `At $${entry.monthlySpend}/mo in ${toolName} API spend, you qualify for pre-purchased credit discounts of ${Math.round(discount * 100)}% below retail rates. Credits are purchased in advance from companies that over-forecasted usage — same API, same models, lower cost. Annual savings at your volume: $${Math.round(entry.monthlySpend * discount * 12).toLocaleString()}.`,
   };
 }
 
 // ─── Alternatives Evaluation ──────────────────────────────────────────────────
-
-function evaluateAlternatives(entry: ToolEntry, _useCase: string): {
+function evaluateAlternatives(
+  entry: ToolEntry,
+  _useCase: string,
+  teamSize: number
+): {
   hasAlternative: boolean;
   altToolId?: string;
   altPlanId?: string;
@@ -835,7 +1245,14 @@ function evaluateAlternatives(entry: ToolEntry, _useCase: string): {
   const alts = ALTERNATIVE_MAP[altKey];
   if (!alts?.length) return { hasAlternative: false, altCostPerSeat: 0, reason: "" };
 
-  const alt = alts[0];
+  const orgTier = classifyOrg(teamSize);
+
+  const reachableAlts = alts.filter((a) =>
+    isPlanReachable(a.toolId, a.planId, orgTier)
+  );
+  if (!reachableAlts.length) return { hasAlternative: false, altCostPerSeat: 0, reason: "" };
+
+  const alt = reachableAlts[0];
   const altTool = getToolById(alt.toolId);
   const altPlan = getPlanById(alt.toolId, alt.planId);
   if (!altTool || !altPlan) return { hasAlternative: false, altCostPerSeat: 0, reason: "" };
@@ -859,8 +1276,21 @@ function evaluateAlternatives(entry: ToolEntry, _useCase: string): {
   };
 }
 
-// ─── Main Audit Engine ────────────────────────────────────────────────────────
+// ═════════════════════════════════════════════════════════════════════════════
+// SAVINGS CAP — large orgs realistically can't recover 60%+ of spend
+// ═════════════════════════════════════════════════════════════════════════════
+function getMaxRealisticSavingsRatio(teamSize: number): number {
+  const tier = classifyOrg(teamSize);
+  switch (tier) {
+    case "solo":       return 0.70;
+    case "small":      return 0.55;
+    case "growing":    return 0.40;
+    case "midmarket":  return 0.25;
+    case "enterprise": return 0.18;
+  }
+}
 
+// ─── Main Audit Engine ────────────────────────────────────────────────────────
 export function runAuditEngine(
   formData: AuditFormData
 ): Omit<AuditResult, "aiSummary" | "aiSummaryFallback"> {
@@ -892,15 +1322,15 @@ export function runAuditEngine(
 
     const planEval = evaluatePlanFit(entry, useCase, teamSize);
     const creditsEval = evaluateCredits(entry);
-    const altEval = evaluateAlternatives(entry, useCase);
+    const altEval = evaluateAlternatives(entry, useCase, teamSize);
 
-    // Priority: credits > plan downgrade > alternative tool > plan eval result
     let recommendationType: RecommendationType = planEval.recommendationType;
     let severity: RecommendationSeverity = planEval.severity;
     let statusLabel = planEval.statusLabel;
-    let recommendedMonthlyCost = planEval.isActionable && planEval.betterPlanId
-      ? planEval.recommendedCostPerSeat * entry.seats
-      : entry.monthlySpend;
+    let recommendedMonthlyCost =
+      planEval.isActionable && planEval.betterPlanId
+        ? planEval.recommendedCostPerSeat * entry.seats
+        : entry.monthlySpend;
     let recommendedAction = "";
     let reasoning = planEval.reasoning;
     let recommendedToolId: string | undefined;
@@ -916,12 +1346,12 @@ export function runAuditEngine(
       reasoning = creditsEval.reasoning;
       credexRelevant = true;
     } else if (planEval.isActionable && planEval.betterPlanId) {
-      const betterCost = planEval.recommendedCostPerSeat * entry.seats;
-      recommendedMonthlyCost = betterCost;
+      recommendedMonthlyCost = planEval.recommendedCostPerSeat * entry.seats;
       recommendedPlanId = planEval.betterPlanId;
-      recommendedAction = planEval.recommendationType === "upgrade_recommended"
-        ? `Consider upgrading to ${tool.name} ${planEval.betterPlanName}`
-        : `Switch to ${tool.name} ${planEval.betterPlanName}`;
+      recommendedAction =
+        planEval.recommendationType === "upgrade_recommended"
+          ? `Move to ${tool.name} ${planEval.betterPlanName}`
+          : `Switch to ${tool.name} ${planEval.betterPlanName}`;
     } else if (altEval.hasAlternative && altEval.altToolId && altEval.altPlanId) {
       const altCost = altEval.altCostPerSeat * entry.seats;
       if (altCost < entry.monthlySpend) {
@@ -967,14 +1397,28 @@ export function runAuditEngine(
     };
   });
 
-  // ─── Aggregates ───────────────────────────────────────────────────────────
+  // ─── Aggregates with savings cap ────────────────────────────────────────
   const totalCurrentMonthlySpend = recommendations.reduce(
-    (s, r) => s + r.currentMonthlyCost, 0
+    (s, r) => s + r.currentMonthlyCost,
+    0
   );
-  const totalRecommendedMonthlySpend = recommendations.reduce(
-    (s, r) => s + r.recommendedMonthlyCost, 0
+  const rawTotalRecommendedMonthlySpend = recommendations.reduce(
+    (s, r) => s + r.recommendedMonthlyCost,
+    0
   );
-  const totalMonthlySavings = Math.max(0, totalCurrentMonthlySpend - totalRecommendedMonthlySpend);
+  const rawTotalMonthlySavings = Math.max(
+    0,
+    totalCurrentMonthlySpend - rawTotalRecommendedMonthlySpend
+  );
+
+  const maxRatio = getMaxRealisticSavingsRatio(teamSize);
+  const cappedTotalMonthlySavings = Math.min(
+    rawTotalMonthlySavings,
+    totalCurrentMonthlySpend * maxRatio
+  );
+  const totalRecommendedMonthlySpend =
+    totalCurrentMonthlySpend - cappedTotalMonthlySavings;
+  const totalMonthlySavings = cappedTotalMonthlySavings;
   const totalAnnualSavings = totalMonthlySavings * 12;
   const savingsPercentage =
     totalCurrentMonthlySpend > 0
@@ -986,10 +1430,7 @@ export function runAuditEngine(
   );
   const highSavingsCase = totalMonthlySavings >= 500;
 
-  // ─── Benchmark ────────────────────────────────────────────────────────────
-  // NOTE: spendPerDeveloper uses TEAM SIZE (org-wide engineering headcount),
-  // not per-tool seat count. Intentional — benchmark compares overall AI
-  // investment per engineer to industry-wide per-engineer norms.
+  // ─── Benchmark ──────────────────────────────────────────────────────────
   const spendPerDeveloper =
     teamSize > 0 ? totalCurrentMonthlySpend / teamSize : totalCurrentMonthlySpend;
   const bucket =

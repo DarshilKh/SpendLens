@@ -3,12 +3,19 @@ import type { ToolDefinition, ToolId } from "@/types";
 // ─── Pricing Database ─────────────────────────────────────────────────────────
 // All prices in USD/user/month (monthly billing unless noted).
 // Last verification: 2026-05-10
-// Sources: official vendor pricing pages + GitHub Docs, Anthropic docs, windsurf.com/pricing
+//
+// priceType field:
+//   • undefined / absent → standard per-seat pricing (auto-fill spend)
+//   • "usage"            → metered/pay-per-token (do NOT auto-fill)
+//   • "custom"           → sales-quoted contract (do NOT auto-fill;
+//                          monthlyPricePerSeat is "starting from" estimate)
+//
+// Sources: official vendor pricing pages + GitHub Docs, Anthropic docs,
+// windsurf.com/pricing
 
 export const TOOLS: ToolDefinition[] = [
+
   // ─── CURSOR ────────────────────────────────────────────────────────────────
-  // Source: cursor.com/pricing — verified May 2026
-  // Major change: "Business" renamed to "Teams" at $40/user/mo; Pro+ and Ultra tiers added.
   {
     id: "cursor",
     name: "Cursor",
@@ -77,7 +84,8 @@ export const TOOLS: ToolDefinition[] = [
       {
         id: "enterprise",
         name: "Enterprise",
-        monthlyPricePerSeat: 100, // custom; requires sales contact
+        monthlyPricePerSeat: 100,
+        priceType: "custom",
         minSeats: 20,
         features: [
           "Pooled org usage",
@@ -92,9 +100,6 @@ export const TOOLS: ToolDefinition[] = [
   },
 
   // ─── GITHUB COPILOT ────────────────────────────────────────────────────────
-  // Source: github.com/features/copilot/plans + docs.github.com — verified May 2026
-  // Major changes: Pro+ added at $39/mo; usage-based billing transitioning June 1, 2026.
-  // Enterprise now requires GitHub Enterprise Cloud (+$21/user), effective total ~$60/user.
   {
     id: "github_copilot",
     name: "GitHub Copilot",
@@ -155,8 +160,8 @@ export const TOOLS: ToolDefinition[] = [
       {
         id: "enterprise",
         name: "Enterprise",
-        // $39 Copilot + $21 GitHub Enterprise Cloud = ~$60 effective
         monthlyPricePerSeat: 39,
+        priceType: "custom",
         minSeats: 10,
         features: [
           "$39 Copilot seat + requires GitHub Enterprise Cloud ($21/user)",
@@ -172,8 +177,6 @@ export const TOOLS: ToolDefinition[] = [
   },
 
   // ─── CLAUDE (ANTHROPIC) ────────────────────────────────────────────────────
-  // Source: claude.com/pricing + anthropic.com/pricing — verified May 2026
-  // Major changes: Max tier added ($100 or $200); Team split into Standard/Premium seats.
   {
     id: "claude",
     name: "Claude (Anthropic)",
@@ -264,7 +267,8 @@ export const TOOLS: ToolDefinition[] = [
       {
         id: "enterprise",
         name: "Enterprise",
-        monthlyPricePerSeat: 0, // custom; contact sales; ~$50K/yr minimum
+        monthlyPricePerSeat: 0,
+        priceType: "custom",
         minSeats: 50,
         features: [
           "Custom token rates",
@@ -281,6 +285,7 @@ export const TOOLS: ToolDefinition[] = [
         id: "api_direct",
         name: "API Direct",
         monthlyPricePerSeat: 0,
+        priceType: "usage",
         features: [
           "Sonnet 4.6: $3/MTok in, $15/MTok out",
           "Opus 4.6: $15/MTok in, $75/MTok out",
@@ -294,9 +299,6 @@ export const TOOLS: ToolDefinition[] = [
   },
 
   // ─── CHATGPT (OPENAI) ───────────────────────────────────────────────────────
-  // Source: chatgpt.com/pricing + openai.com/business/chatgpt-pricing — verified May 2026
-  // Major changes: Business plan dropped to $20/seat (annual) as of April 2, 2026;
-  // new "Go" tier at $8/mo; Pro split into $100 (5x) and $200 (20x).
   {
     id: "chatgpt",
     name: "ChatGPT (OpenAI)",
@@ -363,7 +365,8 @@ export const TOOLS: ToolDefinition[] = [
       {
         id: "enterprise",
         name: "Enterprise",
-        monthlyPricePerSeat: 60, // ~$60–$100; custom; requires annual contract
+        monthlyPricePerSeat: 60,
+        priceType: "custom",
         minSeats: 10,
         features: [
           "Unlimited GPT-5.4",
@@ -380,6 +383,7 @@ export const TOOLS: ToolDefinition[] = [
         id: "api_direct",
         name: "API Direct",
         monthlyPricePerSeat: 0,
+        priceType: "usage",
         features: [
           "GPT-5.4: pay per token",
           "GPT-5: $1.25/MTok in, $10/MTok out",
@@ -392,7 +396,6 @@ export const TOOLS: ToolDefinition[] = [
   },
 
   // ─── ANTHROPIC API ─────────────────────────────────────────────────────────
-  // Source: anthropic.com/pricing — verified May 2026
   {
     id: "anthropic_api",
     name: "Anthropic API",
@@ -404,6 +407,7 @@ export const TOOLS: ToolDefinition[] = [
         id: "pay_as_you_go",
         name: "Pay-as-you-go",
         monthlyPricePerSeat: 0,
+        priceType: "usage",
         features: [
           "Sonnet 4.6: $3/MTok in, $15/MTok out",
           "Opus 4.6: $15/MTok in, $75/MTok out",
@@ -418,6 +422,7 @@ export const TOOLS: ToolDefinition[] = [
         id: "credits",
         name: "Pre-purchased Credits",
         monthlyPricePerSeat: 0,
+        priceType: "usage",
         features: [
           "Discounted via Credex",
           "Up to 30–40% off retail API rates",
@@ -429,7 +434,6 @@ export const TOOLS: ToolDefinition[] = [
   },
 
   // ─── OPENAI API ────────────────────────────────────────────────────────────
-  // Source: openai.com/api/pricing — verified May 2026
   {
     id: "openai_api",
     name: "OpenAI API",
@@ -441,6 +445,7 @@ export const TOOLS: ToolDefinition[] = [
         id: "pay_as_you_go",
         name: "Pay-as-you-go",
         monthlyPricePerSeat: 0,
+        priceType: "usage",
         features: [
           "GPT-5.4: current flagship (April 2026+)",
           "GPT-5: $1.25/MTok in, $10/MTok out",
@@ -453,6 +458,7 @@ export const TOOLS: ToolDefinition[] = [
         id: "credits",
         name: "Pre-purchased Credits",
         monthlyPricePerSeat: 0,
+        priceType: "usage",
         features: [
           "Discounted via Credex",
           "Up to 30–40% off retail API rates",
@@ -464,10 +470,6 @@ export const TOOLS: ToolDefinition[] = [
   },
 
   // ─── GEMINI (GOOGLE) ───────────────────────────────────────────────────────
-  // Source: gemini.google.com, workspace.google.com/pricing — verified May 2026
-  // Major changes: Standalone Gemini Business/Enterprise add-ons discontinued;
-  // Gemini now bundled in all Workspace plans. New Google AI Plus ($7.99/mo) and
-  // Google AI Ultra ($249.99/mo) tiers. Google AI Pro unchanged at $19.99/mo.
   {
     id: "gemini",
     name: "Gemini (Google)",
@@ -560,6 +562,7 @@ export const TOOLS: ToolDefinition[] = [
         id: "api",
         name: "Gemini API (AI Studio)",
         monthlyPricePerSeat: 0,
+        priceType: "usage",
         features: [
           "Gemini 3.1 Pro: $2/MTok in (≤200K), $4 above",
           "$12/MTok out",
@@ -572,10 +575,6 @@ export const TOOLS: ToolDefinition[] = [
   },
 
   // ─── WINDSURF (CODEIUM / COGNITION AI) ────────────────────────────────────
-  // Source: windsurf.com/pricing + windsurf blog (March 2026 pricing update) — verified May 2026
-  // Major changes: Pricing restructured in March 2026.
-  // New plan prices: Free $0, Pro $20, Max $200, Teams $40. Credit system replaced by quotas.
-  // Note: some sources still show old prices ($15 Pro, $30 Teams) — official site shows new prices.
   {
     id: "windsurf",
     name: "Windsurf",
@@ -638,7 +637,8 @@ export const TOOLS: ToolDefinition[] = [
       {
         id: "enterprise",
         name: "Enterprise",
-        monthlyPricePerSeat: 0, // contact sales; ~$60+/user
+        monthlyPricePerSeat: 0,
+        priceType: "custom",
         minSeats: 20,
         features: [
           "Everything in Teams",
