@@ -21,8 +21,8 @@ graph TD
     end
 
     subgraph "External Services"
-        Supabase[(Supabase\nPostgres)]
-        Anthropic["Anthropic API\n(claude-opus-4-5)"]
+        Supabase[("Supabase\nPostgres")]
+        Groq["Groq API\n(llama-3.1-8b-instant)"]
         Resend["Resend\n(transactional email)"]
     end
 
@@ -31,7 +31,7 @@ graph TD
     AuditPage --> Store
     Store -->|form submit| APIAudit
     APIAudit -->|runAuditEngine()| APIAudit
-    APIAudit -->|generateAuditSummary()| Anthropic
+    APIAudit -->|generateAuditSummary()| Groq
     APIAudit -->|storeAudit()| Supabase
     APIAudit -->|result JSON| AuditPage
     AuditPage -->|lead capture| APILeads
@@ -66,9 +66,9 @@ graph TD
    ├── Computes benchmark (spend per dev vs INDUSTRY_BENCHMARKS)
    └── Generates UUID + shareSlug
 
-4. generateAuditSummary(result) — async, 12s timeout
+4. generateAuditSummary(result) — async, 8s timeout with AbortController
    ├── Builds CFO-advisor prompt with full audit context
-   ├── Calls claude-opus-4-5 (max 200 tokens)
+   ├── Calls Groq llama-3.1-8b-instant (max 200 tokens)
    ├── On timeout/error → generateFallbackSummary()
    └── Returns { summary, isFallback }
 
@@ -86,27 +86,28 @@ graph TD
 | **Next.js App Router** | Server components for share pages (SEO, OG metadata), client components for interactive form. Route handlers replace a separate API server. |
 | **Supabase** | Postgres with an instant REST API, RLS for security, no infrastructure to manage. Free tier handles early traffic. |
 | **Zustand + persist** | Form state survives page reloads without any backend session management. Small bundle, no boilerplate. |
-| **Framer Motion** | Production-grade animations without fighting CSS. Declarative, composable, SSR-safe. |
+| **Groq (llama-3.1-8b-instant)** | Sub-500ms inference at the free tier (14,400 requests/day). Used only for the AI summary paragraph — the audit engine itself is deterministic rule-based logic. Groq's OpenAI-compatible endpoint means the integration is a single fetch call. |
 | **Resend** | Transactional email with a clean API and generous free tier (100 emails/day). Trivial to swap for SES at scale. |
 | **Vitest** | Faster than Jest for TypeScript projects, native ESM support, compatible with the Next.js module aliases. |
 | **No Prisma** | Supabase's JS client with typed JSON columns is sufficient for this schema. Prisma adds migration complexity without meaningful benefit at this scale. |
+| **jsPDF (no html2canvas)** | Canvas-based export breaks on dark-mode CSS variables and backdrop-filter utilities. Pure jsPDF layout with explicit coordinates and splitTextToSize produces clean, predictable output that matches the screen. |
 
 ## What Changes at 10k Audits/Day
 
 1. **Rate limiting → Upstash Redis**
-   Replace the in-memory `Map` with `@upstash/ratelimit` (sliding window, persisted across serverless instances).
+   Replace the in-memory `Map` with `@upstash/ratelimit` (sliding window, persisted across serverless instances). The current in-memory limiter does not survive across Vercel cold starts.
 
 2. **AI summary → queue-based**
-   Move `generateAuditSummary` to a background queue (Inngest or QStash). Return the audit result immediately; SSE/polling delivers the summary when ready. Eliminates the 12s timeout pressure.
+   Move `generateAuditSummary` to a background queue (Inngest or QStash). Return the audit result immediately; SSE or polling delivers the summary when ready. Eliminates the 8s timeout pressure and removes the blocking AI call from the critical path entirely.
 
 3. **Supabase → read replicas**
-   Share page reads hit the primary. At 10k/day, add a read replica for `/share/` queries.
+   Share page reads hit the primary. At 10k/day, add a read replica for `/share/` queries. Write path (audit storage) is already fire-and-forget so it won't be the bottleneck.
 
-4. **OG images → pre-rendered**
-   Generate and cache OG images as PNGs in Supabase Storage after each audit, instead of rendering SVG on every request.
+4. **OG images → pre-rendered and cached**
+   Generate and cache OG images as PNGs in Supabase Storage after each audit, instead of rendering SVG dynamically on every share page request.
 
-5. **Analytics → Posthog or Mixpanel**
-   Instrument funnel events: `audit_started`, `audit_completed`, `lead_captured`, `share_link_copied`, `consultation_booked`. Currently stubbed as `console.log`.
+5. **Analytics → Posthog**
+   Instrument funnel events: `audit_started`, `audit_completed`, `lead_captured`, `share_link_copied`, `consultation_booked`. Currently stubbed as `console.log`. Posthog's self-hosted option keeps user data off third-party servers.
 
-6. **CDN caching**
-   Share pages are already `Cache-Control: public, max-age=3600`. At scale, put Cloudflare in front of Vercel with edge caching for share URLs.
+6. **CDN caching for share pages**
+   Share pages are already `Cache-Control: public, max-age=3600`. At scale, put Cloudflare in front of Vercel with edge caching for share URLs — they're immutable after creation.

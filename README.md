@@ -1,37 +1,22 @@
-# SpendLens — AI Spend Audit Platform
+# SpendLens — AI Spend Audit Tool
 
-> **Production-grade AI procurement intelligence for startups.**  
-> Find out if you're overpaying for Cursor, Claude, ChatGPT, GitHub Copilot, and more.
+> **Find out in 60 seconds if your startup is overpaying for Cursor, Claude, ChatGPT, GitHub Copilot, and more.**
 
----
+SpendLens is a free web tool for startup founders and engineering managers. Input your AI tooling stack, get an instant financially-defensible audit with savings recommendations, share the result, and export a PDF for your finance team.
 
-## Overview
+Built as a lead-generation asset for [Credex](https://credex.rocks) — no login required, value shown before email is ever asked for.
 
-SpendLens is a full-stack SaaS audit tool that analyzes a startup's AI tooling spend and produces:
-
-- **Financially defensible recommendations** backed by live pricing data
-- **Spend benchmarking** vs. industry averages ($/dev/mo)
-- **AI-generated executive summary** via Groq/Llama (with intelligent fallback)
-- **Shareable audit URLs** (`/share/[slug]`)
-- **Professional PDF export** — board/CFO ready
-- **Email report delivery** via Resend
+**Live:** https://spendlens.vercel.app
 
 ---
 
-## Tech Stack
+## Screenshots / Demo
 
-| Layer | Technology |
-|---|---|
-| Framework | Next.js 16.2 (App Router, Turbopack) |
-| UI | React 19 + Tailwind CSS v3 |
-| Animation | Framer Motion 12 |
-| State | Zustand 5 (persisted) |
-| Forms | React Hook Form + Zod |
-| Database | Supabase (Postgres) |
-| AI | Groq API (Llama 3.1 8B) |
-| Email | Resend |
-| PDF | jsPDF 4 |
-| Icons | Lucide React |
+> 📹 30-second walkthrough: [Loom link — add before submission]
+
+| Landing | Audit Form | Results |
+|---------|------------|---------|
+| ![Landing page](public/screenshots/landing.png) | ![Audit form](public/screenshots/form.png) | ![Audit results](public/screenshots/results.png) |
 
 ---
 
@@ -40,7 +25,7 @@ SpendLens is a full-stack SaaS audit tool that analyzes a startup's AI tooling s
 ### 1. Clone & install
 
 ```bash
-git clone <your-repo>
+git clone https://github.com/your-username/spendlens
 cd spendlens
 npm install
 ```
@@ -49,23 +34,23 @@ npm install
 
 ```bash
 cp .env.example .env.local
-# Fill in your values — see .env.example for details
+# Fill in your values — see .env.example for required vs optional
 ```
 
-Required env vars:
+**Required:**
 - `NEXT_PUBLIC_SUPABASE_URL` — your Supabase project URL
 - `NEXT_PUBLIC_SUPABASE_ANON_KEY` — Supabase anon key
-- `SUPABASE_SERVICE_ROLE_KEY` — Supabase service role key (server-side only)
+- `SUPABASE_SERVICE_ROLE_KEY` — Supabase service role key (server-side only, never exposed to client)
 
-Optional (graceful fallback if absent):
-- `GROQ_API_KEY` — Groq API key (free tier at console.groq.com)
-- `RESEND_API_KEY` — Resend API key for email delivery
-- `FROM_EMAIL` — Sender email (default: `audits@spendlens.co`)
-- `NEXT_PUBLIC_APP_URL` — App URL for share links
+**Optional (graceful fallback if absent):**
+- `GROQ_API_KEY` — Groq API key for AI summaries (free tier at console.groq.com; falls back to templated summary)
+- `RESEND_API_KEY` — Resend API key for confirmation emails (falls back to silent; audit still works)
+- `FROM_EMAIL` — Sender address (default: `audits@spendlens.co`)
+- `NEXT_PUBLIC_APP_URL` — App URL for share links (default: `http://localhost:3000`)
 
 ### 3. Set up Supabase
 
-Create these tables in your Supabase project:
+Run this SQL in your Supabase project's SQL editor:
 
 ```sql
 -- Audits table
@@ -91,24 +76,57 @@ create table leads (
   created_at timestamptz default now()
 );
 
--- Enable RLS
+-- RLS
 alter table audits enable row level security;
 alter table leads enable row level security;
 
--- Allow public read of public audits
+-- Public audits are readable without auth
 create policy "Public audits readable" on audits
   for select using (is_public = true);
 
--- Service role has full access (set via SUPABASE_SERVICE_ROLE_KEY)
+-- Service role has full access for server-side operations
+create policy "Service role full access on audits" on audits
+  for all using (true);
+
+create policy "Service role full access on leads" on leads
+  for all using (true);
 ```
 
-### 4. Run development server
+### 4. Run locally
 
 ```bash
 npm run dev
 ```
 
 Open [http://localhost:3000](http://localhost:3000).
+
+### 5. Deploy
+
+Push to GitHub, import in Vercel, add env vars, deploy. The app uses:
+- Static prerendering for `/` and `/audit`
+- SSR for `/share/[slug]` (fetches live from Supabase)
+- Edge runtime for `/api/og`
+
+---
+
+## Decisions
+
+Five trade-offs made during the build, and why.
+
+**1. Hardcoded rules for the audit engine instead of an LLM.**
+The assignment hints at this, but I arrived at it on Day 2 independently: LLM-generated recommendations are non-deterministic and non-auditable. A finance person reviewing the output needs to be able to trace every savings figure to a specific plan price and a specific rule. Hardcoded logic gives you that; an LLM doesn't. The AI (Groq/Llama) is reserved for the narrative summary — synthesis, not arithmetic.
+
+**2. Pure jsPDF for PDF export instead of html2canvas.**
+html2canvas screenshots the DOM, which sounds easier but breaks immediately on dark-mode CSS variables, `backdrop-filter` utilities, and page boundaries. Explicit jsPDF layout with `splitTextToSize` for text wrapping required more code but produced clean, predictable output that looks professional rather than like a screenshot. The extra ~80 lines of layout code were worth it.
+
+**3. Fire-and-forget for Supabase writes.**
+The audit result is computed synchronously, then the Supabase insert runs without being awaited. This means a failed insert won't surface to the user, which is a trade-off. The justification: the audit result is already shown to the user before the insert completes; losing the record is a backend problem, not a user-facing one. At MVP scale, acceptable. At production scale, add error monitoring (Sentry) and a retry queue.
+
+**4. In-memory rate limiter instead of Redis.**
+Each Vercel serverless function invocation has its own process memory, so the in-memory `Map` rate limiter doesn't persist across cold starts. This means a determined user could bypass it by triggering multiple cold starts. The trade-off: zero additional infrastructure for MVP, documented clearly (in ARCHITECTURE.md and TESTS.md), and trivially replaceable with Upstash Redis at one line of code. Spending two hours on Redis for an MVP with zero live users would be the wrong call.
+
+**5. SVG for OG images instead of @vercel/og.**
+`@vercel/og` is powerful but caused Edge runtime incompatibilities with other dependencies in the API route. A pure SVG response — dynamically generated with the audit's savings number and headline — works correctly in Twitter, LinkedIn, and iMessage link previews, requires no additional dependencies, and renders faster. The visual quality is simpler but entirely sufficient for a share preview.
 
 ---
 
@@ -118,25 +136,25 @@ Open [http://localhost:3000](http://localhost:3000).
 src/
 ├── app/
 │   ├── api/
-│   │   ├── audit/route.ts       # POST — runs audit engine
-│   │   ├── leads/route.ts       # POST — captures lead + sends email
-│   │   ├── og/route.ts          # GET — dynamic OG image (Edge)
-│   │   └── share/[slug]/route.ts # GET — public audit JSON
-│   ├── audit/page.tsx           # /audit — form + results page
-│   ├── share/[slug]/page.tsx    # /share/:slug — public share page
-│   ├── layout.tsx               # Root layout + metadata
-│   └── globals.css              # Design system tokens + base styles
+│   │   ├── audit/route.ts          # POST — runs audit engine + AI summary
+│   │   ├── leads/route.ts          # POST — captures lead + sends email
+│   │   ├── og/route.ts             # GET — dynamic OG image (SVG, Edge)
+│   │   └── share/[slug]/route.ts   # GET — public audit JSON
+│   ├── audit/page.tsx              # /audit — form + results
+│   ├── share/[slug]/page.tsx       # /share/:slug — public share page
+│   ├── layout.tsx                  # Root layout + global metadata
+│   └── globals.css                 # Design tokens + base styles
 ├── components/
 │   ├── audit/
-│   │   ├── AuditPageClient.tsx  # Step orchestrator (form→running→results)
-│   │   ├── AuditForm.tsx        # Tool entry form
-│   │   ├── AuditRunning.tsx     # Animated loading screen
-│   │   ├── AuditResults.tsx     # Full results + PDF + share
-│   │   ├── BenchmarkWidget.tsx  # Animated benchmark bar chart
-│   │   ├── RecommendationCard.tsx # Per-tool recommendation
-│   │   ├── LeadCaptureModal.tsx # Email capture modal
-│   │   ├── CredexCTA.tsx        # Upsell to Credex credits
-│   │   └── SharePageClient.tsx  # Public share view
+│   │   ├── AuditPageClient.tsx     # Step orchestrator (form → loading → results)
+│   │   ├── AuditForm.tsx           # Tool entry form
+│   │   ├── AuditRunning.tsx        # Loading screen
+│   │   ├── AuditResults.tsx        # Results + PDF export + share
+│   │   ├── BenchmarkWidget.tsx     # Spend-per-dev benchmark bar
+│   │   ├── RecommendationCard.tsx  # Per-tool recommendation
+│   │   ├── LeadCaptureModal.tsx    # Email capture modal
+│   │   ├── CredexCTA.tsx           # Credex upsell (high-savings cases only)
+│   │   └── SharePageClient.tsx     # Public share view
 │   └── layout/
 │       ├── LandingNav.tsx
 │       ├── LandingHero.tsx
@@ -144,66 +162,18 @@ src/
 │       ├── LandingFAQ.tsx
 │       └── LandingFooter.tsx
 ├── lib/
-│   ├── ai/summary.ts            # Groq AI summary with fallback
-│   ├── audit/engine.ts          # Core audit logic (pure, testable)
-│   ├── db/supabase.ts           # Supabase client (graceful if unconfigured)
-│   ├── email/send.ts            # Resend email templates
-│   ├── pricing-data.ts          # Verified pricing database
-│   ├── utils.ts                 # formatCurrency, generateShareSlug, etc.
-│   └── validation.ts            # Zod schemas
+│   ├── ai/summary.ts               # Groq AI summary + deterministic fallback
+│   ├── audit/engine.ts             # Core audit logic (pure function, no side effects)
+│   ├── db/supabase.ts              # Supabase client (graceful if unconfigured)
+│   ├── email/send.ts               # Resend email template
+│   ├── pricing-data.ts             # Verified pricing database (sources in PRICING_DATA.md)
+│   ├── utils.ts                    # formatCurrency, generateShareSlug, etc.
+│   └── validation.ts               # Zod schemas for API input validation
 ├── store/
-│   └── audit-store.ts           # Zustand store (persisted to localStorage)
+│   └── audit-store.ts              # Zustand store (persisted to localStorage)
 └── types/
-    └── index.ts                 # All TypeScript interfaces
+    └── index.ts                    # All TypeScript interfaces
 ```
-
----
-
-## Design System
-
-Colors (CSS variables in `globals.css`):
-
-| Token | Value | Usage |
-|---|---|---|
-| `--bg-base` | `#07111A` | Page background |
-| `--bg-secondary` | `#0F1B2A` | Section backgrounds |
-| `--bg-elevated` | `#162434` | Cards |
-| `--bg-card` | `#1B2B3D` | Nested cards |
-| `--bg-highlight` | `#243447` | Hover/selected states |
-| `--accent-blue` | `#5FA8D3` | Primary accent |
-| `--accent-green` | `#A3BE8C` | Savings / success |
-| `--accent-gold` | `#D4A657` | Warnings |
-| `--accent-danger` | `#D97777` | Errors |
-| `--border` | `#243447` | All borders |
-
----
-
-## Key Features
-
-### Audit Engine (`/src/lib/audit/engine.ts`)
-- Pure function — no side effects, fully unit-testable
-- Per-tool rule logic for: Cursor, GitHub Copilot, Claude, ChatGPT, Anthropic API, OpenAI API, Gemini, Windsurf
-- Accounts for: team size, use case, seat count, actual vs expected spend, enterprise justification thresholds
-- Generates benchmarks vs industry averages
-
-### AI Summary (`/src/lib/ai/summary.ts`)
-- Uses Groq `llama-3.1-8b-instant` for speed
-- 10s timeout with AbortController
-- Graceful deterministic fallback if Groq unavailable
-- Never blocks the audit response
-
-### PDF Export (`AuditResults.tsx → handleDownloadPDF`)
-- Pure jsPDF — no canvas capture, no clipping, no overlap
-- Professional dark-theme layout with accent bar, hero metrics, section headers
-- Properly wraps text with `splitTextToSize`
-- Per-page overflow detection
-
-### Lead Capture (`/api/leads/route.ts`)
-- Email stored via Supabase service client
-- Resend email sent fire-and-forget (doesn't block response)
-- 8s timeout on Supabase fetch
-- 20-minute per-email rate limit
-- Honeypot field for bot protection
 
 ---
 
@@ -212,39 +182,25 @@ Colors (CSS variables in `globals.css`):
 ```bash
 npm run dev          # Start dev server (Turbopack)
 npm run build        # Production build
-npm run type-check   # TypeScript check only
+npm run type-check   # TypeScript check only (tsc --noEmit)
 npm run test         # Run Vitest tests
 npm run format       # Prettier format
 ```
 
 ---
 
-## Deployment (Vercel)
-
-1. Push to GitHub
-2. Import in Vercel
-3. Add all env vars from `.env.example`
-4. Deploy
-
-The app uses:
-- Static prerendering for `/` and `/audit`
-- SSR for `/share/[slug]` (fetches from Supabase)
-- Edge runtime for `/api/og`
-
----
-
 ## Security
 
-- All API routes validate with Zod
+- All API input validated with Zod before any processing
 - Rate limiting: 5 audits/hour per IP, 1 lead capture per 20 min per email
-- Honeypot fields on all public forms
-- Service role key never exposed to client
-- Security headers: `X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy`, etc.
-- `poweredByHeader: false`
-- `overrides.postcss` in package.json pins PostCSS to patched version
+- Honeypot fields on all public-facing endpoints (bots fill them, humans don't)
+- `SUPABASE_SERVICE_ROLE_KEY` never referenced in any client-side code
+- Security headers set in `next.config.ts`: `X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy`
+- `poweredByHeader: false` (removes `X-Powered-By: Next.js`)
+- `.env.local` is in `.gitignore`; only `.env.example` is committed
 
 ---
 
 ## License
 
-Private — © Credex 2025
+Private — © 2026
