@@ -1,18 +1,22 @@
 import { createClient } from "@supabase/supabase-js";
-import type { StoredAudit, StoredLead, AuditResult, LeadCaptureData } from "@/types";
+import type {
+  StoredAudit,
+  AuditResult,
+  LeadCaptureData,
+} from "@/types";
 
-// Validate env vars at module load (server-side only)
+// ─── Env ────────────────────────────────────────────────────────────
 function getEnvVar(name: string, fallback = ""): string {
-  const val = process.env[name] ?? fallback;
-  return val;
+  return process.env[name] ?? fallback;
 }
 
 const supabaseUrl = getEnvVar("NEXT_PUBLIC_SUPABASE_URL");
 const supabaseAnonKey = getEnvVar("NEXT_PUBLIC_SUPABASE_ANON_KEY");
 const supabaseServiceKey = getEnvVar("SUPABASE_SERVICE_ROLE_KEY");
 
-// Public client (browser-safe) — lazy init to avoid issues when env not set
+// ─── Clients ────────────────────────────────────────────────────────
 let _publicClient: ReturnType<typeof createClient> | null = null;
+
 export function getPublicClient() {
   if (!supabaseUrl || !supabaseAnonKey) return null;
   if (!_publicClient) {
@@ -23,7 +27,7 @@ export function getPublicClient() {
   return _publicClient;
 }
 
-// Server-side admin client — created fresh per call to avoid stale auth
+// Server-side admin client — fresh per call to avoid stale auth
 export function getAdminClient() {
   if (!supabaseUrl || !supabaseServiceKey) return null;
   return createClient(supabaseUrl, supabaseServiceKey, {
@@ -31,30 +35,51 @@ export function getAdminClient() {
   });
 }
 
-// Legacy export for backwards compat in share page
+// Legacy export (kept for backwards compat; consider removing after audit)
 export const supabase = {
   from: (table: string) => {
     const client = getPublicClient();
     if (!client) {
-      // Return a dummy object that silently fails
       const dummy: Record<string, unknown> = {};
       dummy.select = () => dummy;
       dummy.eq = () => dummy;
-      dummy.single = () => Promise.resolve({ data: null, error: new Error("Supabase not configured") });
+      dummy.single = () =>
+        Promise.resolve({
+          data: null,
+          error: new Error("Supabase not configured"),
+        });
       return dummy;
     }
     return client.from(table);
   },
 };
 
-// ─── Audit Storage ────────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════
+// AUDIT STORAGE
+// ═══════════════════════════════════════════════════════════════════
 
-export async function storeAudit(result: AuditResult): Promise<{ error: Error | null }> {
+export async function storeAudit(
+  result: AuditResult
+): Promise<{ error: Error | null }> {
   const admin = getAdminClient();
+
   if (!admin) {
-    console.warn("[DB] Supabase not configured — skipping audit storage");
+    const msg =
+      "[storeAudit] ❌ Admin client not configured — SUPABASE_SERVICE_ROLE_KEY missing";
+    console.error(msg);
+
+    // In production, this is a fatal misconfiguration.
+    // Don't pretend it worked — return an error so the API surfaces it.
+    if (process.env.NODE_ENV === "production") {
+      return { error: new Error(msg) };
+    }
+
+    // In dev, allow soft-fail (lets you work without Supabase locally)
+    console.warn("[storeAudit] Continuing without persistence (dev mode)");
     return { error: null };
   }
+
+  console.log("[storeAudit] inserting audit:", result.shareSlug);
 
   const { error } = await admin.from("audits").insert({
     id: result.id,
@@ -79,29 +104,61 @@ export async function storeAudit(result: AuditResult): Promise<{ error: Error | 
     created_at: result.createdAt,
   });
 
-  return { error: error ? new Error(error.message) : null };
+  if (error) {
+    console.error("[storeAudit] ❌ Insert failed:", {
+      code: error.code,
+      message: error.message,
+      details: error.details,
+      hint: error.hint,
+    });
+    return { error: new Error(error.message) };
+  }
+
+  console.log("[storeAudit] ✅ Stored successfully:", result.shareSlug);
+  return { error: null };
 }
 
-export async function getAuditBySlug(slug: string): Promise<StoredAudit | null> {
+export async function getAuditBySlug(
+  slug: string
+): Promise<StoredAudit | null> {
+  console.log("[getAuditBySlug] called with slug:", slug);
+
   const client = getPublicClient();
-  if (!client) return null;
-
-  try {
-    const { data, error } = await client
-      .from("audits")
-      .select("*")
-      .eq("share_slug", slug)
-      .eq("is_public", true)
-      .single();
-
-    if (error || !data) return null;
-    return data as StoredAudit;
-  } catch {
+  if (!client) {
+    console.error("[getAuditBySlug] ❌ Public client not configured");
     return null;
   }
+
+  const { data, error } = await client
+    .from("audits")
+    .select("*")
+    .eq("share_slug", slug)
+    .eq("is_public", true)
+    .maybeSingle();
+
+  if (error) {
+    console.error("[getAuditBySlug] ❌ Query error:", {
+      code: error.code,
+      message: error.message,
+      details: error.details,
+      hint: error.hint,
+    });
+    return null;
+  }
+
+  if (!data) {
+    console.warn("[getAuditBySlug] ⚠️ No row found for slug:", slug);
+    return null;
+  }
+
+  const row = data as unknown as StoredAudit;
+  console.log("[getAuditBySlug] ✅ Found audit:", row.id);
+  return row;
 }
 
-export async function getAuditById(id: string): Promise<StoredAudit | null> {
+export async function getAuditById(
+  id: string
+): Promise<StoredAudit | null> {
   const client = getPublicClient();
   if (!client) return null;
 
@@ -110,24 +167,35 @@ export async function getAuditById(id: string): Promise<StoredAudit | null> {
       .from("audits")
       .select("*")
       .eq("id", id)
-      .single();
+      .maybeSingle();
 
     if (error || !data) return null;
-    return data as StoredAudit;
+    return data as unknown as StoredAudit;
   } catch {
     return null;
   }
 }
 
-// ─── Lead Storage ─────────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════
+// LEAD STORAGE
+// ═══════════════════════════════════════════════════════════════════
 
 export async function storeLead(
   lead: LeadCaptureData,
   monthlySavings: number
 ): Promise<{ error: Error | null }> {
   const admin = getAdminClient();
+
   if (!admin) {
-    console.warn("[DB] Supabase not configured — skipping lead storage");
+    const msg =
+      "[storeLead] ❌ Admin client not configured — SUPABASE_SERVICE_ROLE_KEY missing";
+    console.error(msg);
+
+    if (process.env.NODE_ENV === "production") {
+      return { error: new Error(msg) };
+    }
+
+    console.warn("[storeLead] Continuing without persistence (dev mode)");
     return { error: null };
   }
 
@@ -138,9 +206,10 @@ export async function storeLead(
       .select("id")
       .eq("email", lead.email)
       .eq("audit_id", lead.auditId)
-      .single();
+      .maybeSingle();
 
     if (existing) {
+      console.log("[storeLead] duplicate, skipping:", lead.email);
       return { error: null };
     }
 
@@ -155,23 +224,44 @@ export async function storeLead(
       created_at: new Date().toISOString(),
     });
 
-    return { error: error ? new Error(error.message) : null };
+    if (error) {
+      console.error("[storeLead] ❌ Insert failed:", {
+        code: error.code,
+        message: error.message,
+      });
+      return { error: new Error(error.message) };
+    }
+
+    return { error: null };
   } catch (err) {
-    console.error("[DB] Lead insertion error:", err);
-    return { error: err instanceof Error ? err : new Error("Unknown error") };
+    console.error("[storeLead] ❌ Unexpected error:", err);
+    return {
+      error: err instanceof Error ? err : new Error("Unknown error"),
+    };
   }
 }
 
-// ─── Referral Tracking ────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════
+// REFERRAL TRACKING
+// ═══════════════════════════════════════════════════════════════════
 
-export async function trackReferral(referralCode: string, newAuditId: string) {
+export async function trackReferral(
+  referralCode: string,
+  newAuditId: string
+): Promise<void> {
   const admin = getAdminClient();
-  if (!admin) return;
-  await admin.from("referrals").insert({
+  if (!admin) {
+    console.warn("[trackReferral] Admin client not configured — skipping");
+    return;
+  }
+  const { error } = await admin.from("referrals").insert({
     referral_code: referralCode,
     triggered_audit_id: newAuditId,
     created_at: new Date().toISOString(),
   });
+  if (error) {
+    console.error("[trackReferral] ❌ Insert failed:", error.message);
+  }
 }
 
 export async function getReferralCount(auditId: string): Promise<number> {
