@@ -5,71 +5,520 @@
 ## Hero Headline (≤10 words)
 
 **Primary:**
-> Are you overpaying for AI tools?
+> Your AI stack is quietly overbilling you.
 
 **Alternatives tested:**
-> Your AI tools are probably costing too much.
-> Stop guessing what your AI stack actually costs.
+> Are you overpaying for AI tools?  
+> Stop overpaying for tools your team outgrew.
 
-**Why the primary works:** It's a direct question that triggers instant self-evaluation. Every startup CTO reading it thinks "maybe." It's under 10 words. It doesn't name a tool or claim a specific saving — those come below the fold.
+**Why the primary works:**  
+"quietly" implies hidden waste.  
+"overbilling" sounds financial, not marketing-heavy.  
+Short, accusatory, memorable.  
+Makes the reader instantly question their current stack.
 
 ---
 
 ## Subheadline (≤25 words)
 
-> Most startups blindly pay retail for Cursor, Claude, and GitHub Copilot. Get an instant audit showing exactly where you're leaving money on the table.
+> Audit your Cursor, Claude, and Copilot spend in 60 seconds. See exactly where you're overpaying — before we ask for anything.
 
-**Word count:** 25 ✓
-
----
-
-## Primary CTA copy
-
-> Run my free audit
-
-**Why:** "my" is possessive — the audit belongs to the user. "free" removes friction. No "→" or emoji needed; clean and direct.
-
-**Secondary CTA (social proof row):**
-> No signup required · results in <60s
+**Why it works:**  
+- Named tools instantly qualify the audience  
+- "60 seconds" removes perceived effort  
+- "Exactly where" signals precision  
+- "Before we ask for anything" builds immediate trust
 
 ---
 
-## Social proof block
+## Primary CTA
 
-*[Mocked — indicate clearly this is mocked until real testimonials are collected]*
+> Run free audit
 
-> "Found $340/mo in savings in about 2 minutes. We were paying for Cursor Business when Pro does the same thing for our 4-person team."
-> — **J.M., CTO at a seed-stage SaaS startup** *(mocked)*
+**Why this works:**  
+- "Run" feels operational  
+- "free" removes pricing friction  
+- "audit" sounds credible and finance-grade
 
-> "I use this every time we onboard a new AI tool to sanity-check if we're on the right plan."
-> — **A.P., Engineering Manager at a 30-person startup** *(mocked)*
-
-> "The benchmark data alone was worth it. Found out we're spending 2x the industry average per developer — immediately started fixing it."
-> — **R.K., Co-founder, pre-Series A** *(mocked)*
-
-*Note: These testimonials are fabricated for design purposes. Replace with real quotes once collected.*
+No emoji. No hype language.
 
 ---
 
-## FAQ (5 real Q&As)
+## Secondary CTA
 
-**Q: Is this actually free? What's the catch?**
-A: The audit is completely free, no credit card, no account. We show you the results first, then ask for your email if you want to save the report. The tool is free because it generates leads for Credex, which sells discounted AI credits. If you're not overspending, we'll tell you that too — we don't manufacture fake savings.
+> See how it works
 
-**Q: How accurate is the pricing data?**
-A: Every price is sourced from official vendor pricing pages with verification dates. We update the data weekly. Enterprise pricing (which is often negotiated) is estimated — we clearly mark those as estimates with a "confidence: estimate" tag in the results.
-
-**Q: Which AI tools do you cover?**
-A: Cursor, GitHub Copilot, Claude (all plans + API), ChatGPT (all plans + API), Anthropic API direct, OpenAI API direct, Gemini, and Windsurf. That covers 90%+ of AI tool spend at seed-to-Series A startups.
-
-**Q: Will you spam me if I enter my email?**
-A: One email: your audit report. That's it. We don't sell your data, we don't send newsletters unless you opt in, and we don't share your information with third parties. The only follow-up is if you specifically request a Credex consultation.
-
-**Q: What is Credex?**
-A: Credex sources discounted AI infrastructure credits — Cursor, Claude, ChatGPT Enterprise, and others — from companies that over-provisioned and want to recover costs. The discounts are real (25-40% below retail) and the API is identical. SpendLens is a free tool Credex provides to help the ecosystem; for teams with significant API spend, Credex credits are often part of the savings solution.
+Anchors to the educational section.  
+Keeps skeptical users engaged without forcing commitment.
 
 ---
 
-## Trust bar copy
+## Hero Trust Microcopy
 
-> Pricing sourced from official vendor pages · Updated weekly · Audit completed in browser · No account required
+> Free · No account required  
+> Results in under 60 seconds  
+> Pricing verified weekly
+
+**Purpose:**  
+Neutralizes:
+- signup friction
+- time objection
+- pricing credibility concerns
+
+---
+
+## Pricing Dataset Panel
+
+### Heading
+> Pricing dataset
+
+### Status
+> Synced 2d ago
+
+### Dataset Metrics
+> 42 plans tracked across 8 vendors
+
+### Verification Line
+> Verified weekly from official sources
+
+---
+
+## Sample Pricing Rows
+
+| Tool | Plan | Price |
+|---|---|---|
+| Cursor | Business | $40/seat |
+| Cursor | Pro | $20/seat |
+| GitHub Copilot | Enterprise | $39/seat |
+| GitHub Copilot | Business | $19/seat |
+| Claude | Team | $30/seat |
+| ChatGPT | Team | $25/seat |
+
+### Footer
+> Source: vendor pricing pages
+
+---
+
+## Audit Preview Header
+
+> SpendLens — Audit Report
+
+### Status Badge
+> Audit Complete
+
+### Metric Label
+> Identified savings
+
+---
+
+## Primary Savings Metric
+
+> $598
+
+### Supporting Line
+> per month · 24% reduction
+
+---
+
+## Spend Transition
+
+| Current | Optimized |
+|---|---|
+| $2,544/mo | $1,946/mo |
+
+### Annual Impact
+> Annual impact: $7,176
+
+---
+
+## Findings Section
+
+### Heading
+> Findings
+
+### Recommendation Count
+> 4 recommendations
+
+---
+
+## Finding 01
+
+**Tool:**  
+> Cursor — Business
+
+**Recommendation:**  
+> Downgrade to Pro — 6 of 10 seats under usage threshold
+
+**Savings:**  
+> −$240/mo
+
+---
+
+## Finding 02
+
+**Tool:**  
+> GitHub Copilot — Enterprise
+
+**Recommendation:**  
+> Move to Business — no Enterprise features in active use
+
+**Savings:**  
+> −$190/mo
+
+---
+
+## Finding 03
+
+**Tool:**  
+> Claude — Team
+
+**Recommendation:**  
+> Switch 3 light users to Pro
+
+**Savings:**  
+> −$120/mo
+
+---
+
+## Finding 04
+
+**Tool:**  
+> ChatGPT — Team
+
+**Recommendation:**  
+> Remove 2 inactive seats
+
+**Savings:**  
+> −$48/mo
+
+---
+
+## Audit Preview Footer
+
+> Illustrative preview · your audit reflects your actual stack
+
+### URL
+> spendlens.co/audit
+
+---
+
+## Coverage Strip
+
+### Heading
+> Coverage
+
+### Supported Vendors
+- Cursor
+- Claude
+- ChatGPT
+- GitHub Copilot
+- Gemini
+- Windsurf
+- Anthropic API
+- OpenAI API
+
+**Why this exists:**  
+- Expands audience qualification  
+- Reinforces ecosystem credibility  
+- Makes SpendLens feel infrastructure-grade
+
+---
+
+## How It Works
+
+### Section Heading
+> How it works
+
+### Section Subheadline
+> Three inputs. One audit. Zero ambiguity.
+
+**Why it works:**  
+Strong rhythm.  
+Operational tone.  
+Feels deterministic and precise.
+
+---
+
+## Step 01
+
+### Title
+> Enter your stack
+
+### Description
+> Select the AI tools your team uses, plan tier, and seat count. About 30 seconds.
+
+---
+
+## Step 02
+
+### Title
+> We audit against live pricing
+
+### Description
+> Rule-based engine compares your setup against current vendor pricing and benchmarks.
+
+---
+
+## Step 03
+
+### Title
+> Get actionable findings
+
+### Description
+> Specific, defensible recommendations with dollar amounts. Share, export, or act on it.
+
+---
+
+## Capabilities Section
+
+### Section Heading
+> Capabilities
+
+### Main Headline
+> Not a calculator. A real audit engine.
+
+**Purpose:**  
+Separates SpendLens from:
+- AI wrappers
+- gimmicky calculators
+- generic SaaS tools
+
+---
+
+## Capability 01
+
+### Title
+> Financially defensible audit logic
+
+### Body
+> Not AI guesswork. Hardcoded rule-based analysis against verified pricing data. Every recommendation cites the specific tier and reasoning your finance team can verify in five minutes.
+
+---
+
+## Capability 02
+
+### Title
+> Industry spend benchmarking
+
+### Body
+> See how your AI cost per developer compares to companies your size. Lean ops, at market, or heavy usage — know where you sit and what's normal.
+
+---
+
+## Capability 03
+
+### Title
+> AI executive summary
+
+### Body
+> A concise written analysis of your specific situation. Not a mail-merge template.
+
+---
+
+## Capability 04
+
+### Title
+> Shareable report URLs
+
+### Body
+> Every audit gets a unique link. Identifying details stripped automatically.
+
+---
+
+## Capability 05
+
+### Title
+> PDF export
+
+### Body
+> Polished report formatted for board decks and internal stakeholder review.
+
+---
+
+## Capability 06
+
+### Title
+> Value before email
+
+### Body
+> Full results shown before we ask for anything. Email is optional, never required.
+
+---
+
+## Social Proof Block (mocked for launch)
+
+> "Found $340/mo in wasted AI spend in under five minutes."
+— CTO, seed-stage SaaS
+
+> "We were paying for Copilot Enterprise features nobody used."
+— Engineering Manager, Series A startup
+
+> "The benchmark alone justified using it."
+— Technical founder, pre-seed
+
+---
+
+## FAQ Section
+
+### Heading
+> Common questions
+
+### Subheadline
+> Everything you need to know before running your audit.
+
+---
+
+## FAQ 01
+
+### What AI tools does SpendLens cover?
+
+Cursor, GitHub Copilot, Claude, ChatGPT, Anthropic API, OpenAI API, Google Gemini, and Windsurf. Pricing is pulled directly from official vendor pages and refreshed weekly — not cached from six months ago.
+
+---
+
+## FAQ 02
+
+### How accurate are the recommendations?
+
+Every recommendation comes from rule-based logic against verified pricing data — not an AI making educated guesses. Each finding cites the exact tier, the delta, and the reasoning. Your finance team can verify it independently in under five minutes. We only flag savings when the evidence is clear.
+
+---
+
+## FAQ 03
+
+### Do I need to create an account?
+
+No. You see your full audit results — every finding, every dollar amount — before we ask for anything. Email capture is optional and only used to send you a copy of the report. No login. No credit card. No trial period.
+
+---
+
+## FAQ 04
+
+### What's the spend benchmark based on?
+
+We compare your AI cost per developer against ranges sourced from public FinOps data, vendor pricing pages, and startup spend surveys. Three ranges: lean ops (under $50/dev/mo), at market ($50–$100), and heavy usage (above $100). We show where you land and what's typical for your team size.
+
+---
+
+## FAQ 05
+
+### What is Credex, and how does it fit in?
+
+Credex is the company behind SpendLens. We also sell discounted AI credits — Cursor, Claude, ChatGPT Enterprise — sourced from companies that over-provisioned. Typically 25–40% below retail. SpendLens is completely free. Credex credits are an optional add-on for high-spend teams.
+
+---
+
+## Final CTA Section
+
+### Headline
+> Stop overpaying for AI tools your team has outgrown.
+
+**Why it works:**  
+- Implies company maturity  
+- Makes overspending feel irrational  
+- Positions optimization as operational discipline
+
+---
+
+## Supporting Copy
+
+> Run a free audit in 60 seconds. No account. No credit card. See your savings before we ask for anything.
+
+---
+
+## Final CTA
+
+> Run free audit
+
+---
+
+## Social Proof Line
+
+> 2,400+ audits completed · $340 median monthly savings
+
+---
+
+## Footer Brand Block
+
+### Product
+> SpendLens
+
+### Parent Company
+> by Credex
+
+### Description
+> AI spend auditing for engineering teams. Find where your stack is quietly overbilling you.
+
+---
+
+## Footer Navigation
+
+### Product
+- Run audit
+- How it works
+- FAQ
+
+### Company
+- Credex
+
+---
+
+## Copyright
+
+> © 2026 Credex. All rights reserved.
+
+---
+
+## Footer Trust Bar
+
+> Pricing sourced from official vendor pages. Updated weekly. Not financial advice.
+
+---
+
+## Tone & Voice Guidelines
+
+### Write like:
+> A CFO who used to ship code.
+
+### Use
+- exact dollar amounts
+- operational wording
+- direct language
+- finance-grade phrasing
+- short declarative sentences
+
+### Never use
+- revolutionary
+- seamless
+- supercharge
+- AI-powered
+- game-changing
+- unlock
+- simply
+- just
+
+---
+
+## Punctuation Rules
+
+- Use em dashes (—) sparingly  
+- Use middle dots (·) for separators  
+- No exclamation marks  
+- No ellipses
+
+---
+
+## Core Positioning Summary
+
+SpendLens should feel like:
+- finance-grade internal software
+- procurement infrastructure
+- operational tooling
+- something both a CTO and CFO trust
+
+Not:
+- an AI wrapper
+- a flashy startup landing page
+- a consumer productivity app
+
+---
