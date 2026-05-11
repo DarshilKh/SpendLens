@@ -6,7 +6,7 @@ import LandingFooter from "@/components/layout/LandingFooter";
 import LandingNav from "@/components/layout/LandingNav";
 
 export const metadata: Metadata = {
-  title: "SpendLens — AI Spend Audit for Startups",
+  title: "SpendLens — AI Spend Audit ",
   description:
     "Find out if you're overpaying for Cursor, Claude, ChatGPT, or GitHub Copilot. Free audit. Instant results. No login required.",
   alternates: { canonical: "https://spendlens.co" },

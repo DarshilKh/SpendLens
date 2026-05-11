@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Plus, Trash2, ChevronDown, AlertCircle, Loader2, ArrowRight, Info } from "lucide-react";
 import { useAuditStore } from "@/store/audit-store";
 import { TOOLS } from "@/lib/pricing-data";
-import type { ToolId, UseCase } from "@/types";
+import type { ToolId, UseCase, PricingPlan } from "@/types";
 
 const USE_CASES: { value: UseCase; label: string }[] = [
   { value: "coding",   label: "Coding / Engineering" },
@@ -13,6 +13,21 @@ const USE_CASES: { value: UseCase; label: string }[] = [
   { value: "research", label: "Research" },
   { value: "mixed",    label: "Mixed / General" },
 ];
+
+// ─── Format the price label shown next to a plan name ────────────────────────
+function formatPlanPriceLabel(plan: PricingPlan): string {
+  if (plan.priceType === "usage") {
+    return " · Usage-based";
+  }
+  if (plan.priceType === "custom") {
+    return plan.monthlyPricePerSeat > 0
+      ? ` · From $${plan.monthlyPricePerSeat}`
+      : " · Custom";
+  }
+  return plan.monthlyPricePerSeat > 0
+    ? ` · $${plan.monthlyPricePerSeat}`
+    : " · Free";
+}
 
 // ─── Clean number input — no native spinners, real placeholder support ───────
 function NumberField({
@@ -123,13 +138,18 @@ export default function AuditForm() {
   const handleAddTool = (toolId: ToolId) => {
     const tool = TOOLS.find((t) => t.id === toolId);
     if (!tool) return;
-    const defaultPlan = tool.plans.find((p) => p.monthlyPricePerSeat > 0) ?? tool.plans[0];
+    // Pick the first standard-priced plan as default; fall back to first plan
+    const defaultPlan =
+      tool.plans.find(
+        (p) => p.monthlyPricePerSeat > 0 && !p.priceType
+      ) ?? tool.plans[0];
     addTool(toolId, defaultPlan.id);
   };
 
   // ─── Auto-fill spend whenever plan or seat count changes ──────────────────
-  // Triggered when the user changes plan or seats. Only writes if the user
-  // hasn't manually overridden the spend field for this entry.
+  // Only fires for STANDARD per-seat plans. Usage-based and custom-quoted
+  // plans are user-entered because they have no predictable seat × price
+  // relationship.
   const recalcSpend = (entryId: string, planId: string, seats: number | undefined) => {
     if (userEditedSpend.current.has(entryId)) return;
     if (!seats) return;
@@ -139,6 +159,12 @@ export default function AuditForm() {
     if (!tool) return;
     const plan = tool.plans.find((p) => p.id === planId);
     if (!plan) return;
+
+    // Don't auto-fill for usage-based or custom plans
+    if (plan.priceType === "usage" || plan.priceType === "custom") {
+      return;
+    }
+
     const expected = plan.monthlyPricePerSeat * seats;
     updateTool(entryId, { monthlySpend: expected });
   };
@@ -212,7 +238,7 @@ export default function AuditForm() {
           className="text-[15px] leading-relaxed max-w-xl"
           style={{ color: "var(--text-tertiary)" }}
         >
-          Enter the AI tools your team pays for. We'll auto-calculate the standard rate
+          Enter the AI tools your team pays for. We&apos;ll auto-calculate the standard rate
           based on plan and seats — adjust the actual amount if your invoice differs.
         </p>
       </motion.div>
@@ -358,9 +384,17 @@ export default function AuditForm() {
               const tool = TOOLS.find((t) => t.id === entry.toolId);
               if (!tool) return null;
               const currentPlan = tool.plans.find((p) => p.id === entry.planId);
-              const expectedCost = (currentPlan?.monthlyPricePerSeat ?? 0) * (entry.seats || 0);
+
+              const isVariablePlan =
+                currentPlan?.priceType === "usage" || currentPlan?.priceType === "custom";
+
+              const expectedCost = isVariablePlan
+                ? 0
+                : (currentPlan?.monthlyPricePerSeat ?? 0) * (entry.seats || 0);
+
               const userOverride = userEditedSpend.current.has(entry.id);
-              const overspending = expectedCost > 0 && entry.monthlySpend > expectedCost * 1.15;
+              const overspending =
+                expectedCost > 0 && entry.monthlySpend > expectedCost * 1.15;
 
               return (
                 <motion.div
@@ -427,9 +461,7 @@ export default function AuditForm() {
                                 {tool.plans.map((plan) => (
                                   <option key={plan.id} value={plan.id}>
                                     {plan.name}
-                                    {plan.monthlyPricePerSeat > 0
-                                      ? ` · $${plan.monthlyPricePerSeat}`
-                                      : " · Free"}
+                                    {formatPlanPriceLabel(plan)}
                                   </option>
                                 ))}
                               </select>
@@ -474,7 +506,7 @@ export default function AuditForm() {
                               style={{ color: "var(--text-tertiary)", letterSpacing: "0.06em" }}
                             >
                               Actual / mo
-                              {!userOverride && expectedCost > 0 && (
+                              {!isVariablePlan && !userOverride && expectedCost > 0 && (
                                 <span
                                   className="normal-case font-normal text-[9px] px-1 rounded"
                                   style={{
@@ -486,6 +518,18 @@ export default function AuditForm() {
                                   auto
                                 </span>
                               )}
+                              {isVariablePlan && (
+                                <span
+                                  className="normal-case font-normal text-[9px] px-1 rounded"
+                                  style={{
+                                    background: "var(--accent-gold-a10)",
+                                    color: "var(--accent-gold)",
+                                    letterSpacing: "0",
+                                  }}
+                                >
+                                  manual
+                                </span>
+                              )}
                             </label>
                             <NumberField
                               id={`spend-${entry.id}`}
@@ -494,7 +538,13 @@ export default function AuditForm() {
                                 userEditedSpend.current.add(entry.id);
                                 updateTool(entry.id, { monthlySpend: v ?? 0 });
                               }}
-                              placeholder={expectedCost > 0 ? String(expectedCost) : "0"}
+                              placeholder={
+                                isVariablePlan
+                                  ? "Enter your bill"
+                                  : expectedCost > 0
+                                    ? String(expectedCost)
+                                    : "0"
+                              }
                               min={0}
                               max={1000000}
                               prefix="$"
@@ -503,8 +553,9 @@ export default function AuditForm() {
                           </div>
                         </div>
 
-                        {/* Inline status hint */}
-                        {expectedCost > 0 && (
+                        {/* ── Inline status hint ──────────────────────────── */}
+                        {/* Standard plan: show expected cost + override controls */}
+                        {!isVariablePlan && expectedCost > 0 && (
                           <div className="flex items-center gap-2 mt-2.5 text-[11px] tabular flex-wrap">
                             <span style={{ color: "var(--text-muted)" }}>
                               Standard: ${expectedCost.toLocaleString()}/mo
@@ -532,6 +583,33 @@ export default function AuditForm() {
                               </button>
                             )}
                           </div>
+                        )}
+
+                        {/* Usage-based plan hint */}
+                        {currentPlan?.priceType === "usage" && (
+                          <p
+                            className="mt-2.5 text-[11px] leading-relaxed"
+                            style={{ color: "var(--text-muted)" }}
+                          >
+                            Usage-based pricing — enter your actual monthly invoice amount from the vendor.
+                          </p>
+                        )}
+
+                        {/* Custom-quoted plan hint */}
+                        {currentPlan?.priceType === "custom" && (
+                          <p
+                            className="mt-2.5 text-[11px] leading-relaxed"
+                            style={{ color: "var(--text-muted)" }}
+                          >
+                            Custom-priced contract — enter your contracted monthly amount
+                            {currentPlan.monthlyPricePerSeat > 0 && (
+                              <>
+                                {" "}(typically starts around{" "}
+                                <span className="tabular">${currentPlan.monthlyPricePerSeat}/seat</span>)
+                              </>
+                            )}
+                            .
+                          </p>
                         )}
                       </div>
 
