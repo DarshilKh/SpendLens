@@ -9,7 +9,7 @@ function getResend(): Resend | null {
   return _resend;
 }
 
-const FROM_EMAIL = process.env.FROM_EMAIL ?? "audits@spendlens.co";
+const FROM_EMAIL = process.env.FROM_EMAIL ?? "onboarding@resend.dev";
 
 export async function sendAuditConfirmationEmail(
   lead: LeadCaptureData,
