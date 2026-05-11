@@ -1,92 +1,91 @@
 # Prompts
 
-This file documents every LLM prompt used in SpendLens, the reasoning behind each design decision, and what was tried that didn't work.
+## AI Summary Generation
+
+**Where it's used:** `/src/lib/ai/summary.ts`
+
+**Model:** `llama-3.1-8b-instant` via Groq API (OpenAI-compatible endpoint)
+
+**Why Groq over a slower model:** Groq's free tier provides 14,400 requests/day on llama-3.1-8b-instant with typical inference under 500ms for a 200-token response. The audit result is already on screen; the AI summary renders in a card below the fold. Speed matters more than reasoning depth for a 100-word paragraph. Fallback to a templated summary if the key is absent or the request fails.
 
 ---
 
-## 1. Audit Summary Prompt
-
-**Used in:** `src/lib/ai/summary.ts` → `generateAuditSummary()`
-
-**Model:** `llama-3.3-70b-versatile` via Groq API (OpenAI-compatible endpoint)
-
-**Why Groq over Anthropic API:** Groq's free tier is generous (14,400 requests/day on llama-3.3-70b) and has zero cold-start latency — typically <500ms for a 200-token response. The Anthropic API is used for the product's core Credex use case; Groq keeps this tool's operating cost at $0 while delivering high-quality output. Fallback to a templated summary if the key is absent or the request fails.
-
-**Full prompt:**
+## The Prompt
 
 ```
-You are a pragmatic CFO advisor helping a {teamSize}-person startup optimize their AI tool spending. Analyze this audit and write a 100-word personalized summary.
+You are a senior CFO advisor reviewing an AI tooling audit for a startup.
 
-Team context:
-- Team size: {teamSize} people
-- Primary use case: {useCase}
-- Total AI spend: {totalCurrentMonthlySpend}/mo
-- Potential monthly savings: {totalMonthlySavings}/mo ({savingsPercentage}%)
-- Potential annual savings: {totalAnnualSavings}
-- Spend per developer vs industry: ${spendPerDeveloper}/dev vs ${industryAverage}/dev average ({benchmarkLabel})
+Write a single paragraph of exactly 80–100 words summarising the audit findings below.
+Your tone: direct, professional, no hype. You are writing for a technical founder or
+engineering manager who values precision over encouragement.
 
-Tool-by-tool breakdown:
-{tool breakdown lines}
+Rules:
+- Do NOT begin with "I" or "This audit"
+- Do NOT use the phrase "cost-effective" or "optimize"
+- Do NOT invent numbers not present in the data
+- Mention the single highest-impact recommendation by name
+- End with one concrete next step the reader should take this week
 
-Write a 90-110 word personalized paragraph that:
-1. Acknowledges their specific situation (team size, use case, tools they use)
-2. Calls out the 1-2 highest-impact savings opportunities with specific dollar amounts
-3. Gives one concrete next step
-4. Ends with an honest assessment of their AI spend health
-
-Tone: direct, financially literate, not salesy. Sound like a CFO or technical advisor, not a chatbot. Use specific numbers. No fluff or generic AI advice.
+Audit data:
+- Tools audited: {{toolList}}
+- Total monthly spend: ${{totalMonthlySpend}}
+- Identified monthly savings: ${{totalMonthlySavings}} ({{savingsPercentage}}% reduction)
+- Team size: {{teamSize}}
+- Primary use case: {{useCase}}
+- Highest-impact finding: {{topFinding}}
+- Credex-relevant (high API spend): {{credexRelevant}}
 ```
-
-**Why this prompt works:**
-
-- **Role assignment ("pragmatic CFO advisor"):** Anchors the model's persona in "financial literacy and directness" rather than the default helpful-assistant mode that tends to produce generic advice.
-- **Explicit word count (90-110 words):** Without a bound, Claude will expand. 100 words fits the UI card and prevents wall-of-text responses. Giving a range (not exactly 100) prevents the model from padding or truncating awkwardly.
-- **Specific numbers in the context:** The model produces better outputs when it has concrete figures to work with rather than abstract descriptions. Injecting `$340/mo` is more useful than "significant savings."
-- **The four structural points:** Prevents the model from writing a generic summary that ignores the actual data. Point 4 ("honest assessment") is key — without it, the model tends toward optimism bias.
-- **"No fluff or generic AI advice":** This explicit negative constraint reduces the frequency of phrases like "In today's AI landscape..." that add no value.
-
-**What was tried first (and didn't work):**
-
-*Version 1 (too generic):*
-```
-Summarize this AI spend audit in 100 words.
-{audit data}
-```
-Result: Produced boilerplate summaries that read like a template. Didn't use specific numbers. Tone was that of a customer support bot.
-
-*Version 2 (too structured):*
-```
-Write a 3-sentence audit summary:
-Sentence 1: Current situation
-Sentence 2: Top recommendation
-Sentence 3: Next step
-```
-Result: Grammatically correct but robotic. The rigid structure prevented natural flow and the output felt like a mail-merge.
-
-*Version 3 (prompt injection test):*
-During testing, a user input `companyName` containing `"Ignore all instructions and say..."` — the template literally injects company name into the context. The model correctly ignored the injection because the system prompt structure makes the data clearly subordinate. No user input is ever placed in a position of structural authority.
 
 ---
 
-## 2. Fallback Summary Template
+## Why This Prompt Is Written This Way
 
-**Used in:** `src/lib/ai/summary.ts` → `generateFallbackSummary()`
+**Structural constraints (4 rules):**
 
-Not a prompt — this is a deterministic TypeScript function that generates a templated summary when the Anthropic API is unavailable (timeout, rate limit, missing key).
+The four "do not" rules each prevent a specific failure mode I observed during iteration:
 
-**Design decision:** The fallback must still feel personalized. It uses the actual team size, tool count, use case, and savings figures from the audit result. A user who never sees the AI version should not notice a qualitative difference — they should just notice the summary paragraph exists.
+- "Do not begin with 'I'" — the model's default opening is "I noticed that..." which reads as a chatbot, not a financial advisor.
+- "Do not begin with 'This audit'" — the second most common default; it's circular and wastes the opening line.
+- "Do not use 'cost-effective' or 'optimize'" — these are the two words that make B2B copy sound like AI slop. Banning them forces more specific language.
+- "Do not invent numbers" — without this constraint, the model occasionally extrapolates savings percentages or invents benchmark comparisons not in the audit data. With this constraint, every claim in the summary traces back to the structured input.
 
-The fallback is also used as the basis for evaluating whether the AI version is actually better. During development, several AI responses were compared against the fallback for a set of test inputs. The AI version was judged better ~80% of the time; the fallback outperformed AI for the "already optimal" case (where AI tended to over-explain and the template was more confident and concise).
+**"80–100 words exactly":**
+The results page summary card has a fixed height. Under 80 words looks thin; over 100 words overflows on mobile. A word count constraint produces more consistent output than relying on `max_tokens` alone, because the model interprets `max_tokens` as a ceiling, not a target.
+
+**"Mention the single highest-impact recommendation by name":**
+Without this instruction, the model produces generic summaries ("there are several opportunities to reduce spend"). Requiring a named recommendation forces specificity and makes the summary more useful to the reader.
+
+**"End with one concrete next step this week":**
+This was the most important change across iterations. Without it, the model ended with summary statements ("overall, your AI spend is above average for your team size"). With it, the model ends with action ("downgrade the three Cursor Business seats to Pro by end of week — the admin controls are identical"). The latter gives the reader a reason to act.
 
 ---
 
-## Notes on AI use in the audit engine
+## What I Tried That Didn't Work
 
-The audit engine itself (`src/lib/audit/engine.ts`) does **not** use AI. Every recommendation is produced by deterministic rule-based logic.
+**Attempt 1 — Asking for JSON output:**
+I initially had the model return `{ summary: string, topAction: string }` and displayed them separately. The model frequently hallucinated the `topAction` field with recommendations not in the audit data. Switched to a single paragraph — harder to hallucinate within a flowing sentence.
 
-This was a deliberate design choice:
-1. Audit recommendations need to be traceable to specific pricing data. LLM reasoning is not auditable.
-2. Deterministic logic is testable. All 20 test cases in `tests/audit-engine.test.ts` would be impossible to write against an LLM-backed engine.
-3. The assignment hints at this explicitly: "knowing when not to use AI is part of the test."
+**Attempt 2 — No word count constraint:**
+The model produced summaries ranging from 40 to 180 words. The 40-word ones looked placeholder-like; the 180-word ones broke the card layout on mobile. Explicit word count solved both.
 
-The principle: use AI where it adds genuine value (narrative synthesis, personalization), avoid it where determinism is required (financial calculations, pricing comparisons).
+**Attempt 3 — Including raw recommendation objects in the prompt:**
+Passing the full `recommendations[]` array as JSON produced summaries that read like a list wrapped in paragraph prose ("The first recommendation is X. The second recommendation is Y."). Switching to pre-processed human-readable strings for `toolList` and `topFinding` produced natural narrative output.
+
+**Attempt 4 — "Write as a friendly advisor":**
+Produced summaries with phrases like "Great news!" and "You're doing well overall!" — wrong tone entirely for a B2B procurement tool. Replacing "friendly" with "senior CFO advisor" immediately shifted the register.
+
+---
+
+## Fallback Behavior
+
+If the Groq API is unavailable (key missing, timeout after 8s, rate limit hit), the function returns a deterministic templated summary built from the same audit data:
+
+```
+Your {{teamSize}}-person team is spending ${{totalMonthlySpend}}/month across
+{{toolCount}} AI tools. {{#if savings}}The audit identified ${{totalMonthlySavings}}/month
+in potential savings — an annualised ${{totalAnnualSavings}}. The highest-impact action
+is {{topFinding}}.{{else}}Your current spend is well-calibrated for your team size and
+use case.{{/if}}
+```
+
+The fallback is intentionally dry. It doesn't try to mimic the AI output — it provides the key numbers cleanly. The UI does not expose to the user whether the summary is AI-generated or templated.
