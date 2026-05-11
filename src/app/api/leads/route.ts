@@ -14,7 +14,10 @@ export async function POST(req: NextRequest) {
   try {
     body = await req.json();
   } catch {
-    return NextResponse.json({ success: false, error: "Invalid request body" }, { status: 400 });
+    return NextResponse.json(
+      { success: false, error: "Invalid request body" },
+      { status: 400 }
+    );
   }
 
   // Honeypot
@@ -25,7 +28,10 @@ export async function POST(req: NextRequest) {
   const parsed = LeadCaptureSchema.safeParse(body);
   if (!parsed.success) {
     return NextResponse.json(
-      { success: false, error: parsed.error.issues[0]?.message ?? "Validation failed" },
+      {
+        success: false,
+        error: parsed.error.issues[0]?.message ?? "Validation failed",
+      },
       { status: 400 }
     );
   }
@@ -37,31 +43,38 @@ export async function POST(req: NextRequest) {
   const now = Date.now();
   const lastCapture = emailRateLimitMap.get(emailHash) ?? 0;
   if (now - lastCapture < COOLDOWN_MS) {
-    return NextResponse.json({ success: true }); // Silently succeed
+    console.log("[Leads API] Rate-limited (silent success):", lead.email);
+    return NextResponse.json({ success: true });
   }
   emailRateLimitMap.set(emailHash, now);
 
-  // Run storage + email with individual timeouts, non-blocking
-  const TIMEOUT = 8000;
+  console.log("[Leads API] Processing:", {
+    email: lead.email,
+    auditId: lead.auditId,
+  });
 
-  const withTimeout = <T>(promise: Promise<T>, ms: number): Promise<T> =>
-    Promise.race([
-      promise,
-      new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error("Timeout")), ms)
-      ),
-    ]);
+  // ─── Fetch audit (needed for email body) ───────────────────────
+  const storedAudit = await getAuditById(lead.auditId);
+  if (!storedAudit) {
+    console.warn("[Leads API] ⚠️ Audit not found for ID:", lead.auditId);
+  }
 
-  // Fetch audit (needed for email)
-  const storedAudit = await withTimeout(getAuditById(lead.auditId), TIMEOUT).catch(() => null);
-
-  // Store lead (non-blocking on failure)
   const monthlySavings = storedAudit?.result?.totalMonthlySavings ?? 0;
-  storeLead(lead, monthlySavings).catch((err) =>
-    console.error("[Leads API] Storage failed (non-fatal):", err)
-  );
 
-  // Send email (fire and forget — don't block response)
+  // ─── AWAIT both critical operations ────────────────────────────
+  // Previous code used .catch() without await — promises were killed
+  // by Vercel serverless before they resolved. Both DB write and email
+  // never actually executed.
+
+  const { error: storeError } = await storeLead(lead, monthlySavings);
+  if (storeError) {
+    console.error("[Leads API] ❌ Lead storage failed:", storeError.message);
+    // Non-fatal — continue to send email even if DB write fails
+  } else {
+    console.log("[Leads API] ✅ Lead stored");
+  }
+
+  // Send email — only if we have audit data
   if (storedAudit) {
     const fullResult: AuditResult = {
       ...storedAudit.result,
@@ -69,9 +82,20 @@ export async function POST(req: NextRequest) {
       shareSlug: storedAudit.share_slug,
       formData: storedAudit.form_data,
     };
-    sendAuditConfirmationEmail(lead, fullResult).catch((err) =>
-      console.error("[Leads API] Email failed (non-fatal):", err)
-    );
+
+    try {
+      await sendAuditConfirmationEmail(lead, fullResult);
+      console.log("[Leads API] ✅ Email pipeline complete:", lead.email);
+    } catch (err) {
+      console.error("[Leads API] ❌ Email failed:", {
+        message: err instanceof Error ? err.message : String(err),
+        email: lead.email,
+      });
+      // Email failure shouldn't break the user flow — they still have
+      // the share URL. Return success but log loudly so we can monitor.
+    }
+  } else {
+    console.warn("[Leads API] ⚠️ Skipped email — no audit data available");
   }
 
   return NextResponse.json({ success: true });

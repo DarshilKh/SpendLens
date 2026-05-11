@@ -17,7 +17,7 @@ export async function sendAuditConfirmationEmail(
 ): Promise<void> {
   const resend = getResend();
   if (!resend) {
-    console.warn("[Email] RESEND_API_KEY not set — skipping email send");
+    console.warn("[Email] ⚠️ RESEND_API_KEY not set — skipping email send");
     return;
   }
 
@@ -72,7 +72,7 @@ export async function sendAuditConfirmationEmail(
 <div class="wrap">
   <div class="header">
     <div class="logo">SpendLens</div>
-    <div class="logo-sub">AI Spend Audit &middot; by Credex &middot; ${new Date().toLocaleDateString("en-US",{month:"long",day:"numeric",year:"numeric"})}</div>
+    <div class="logo-sub">AI Spend Audit &middot; by Credex &middot; ${new Date().toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}</div>
   </div>
 
   <div class="body">
@@ -125,15 +125,39 @@ export async function sendAuditConfirmationEmail(
 </body>
 </html>`;
 
+  console.log("[Email] Sending:", { from: FROM_EMAIL, to: lead.email });
+
   try {
-    await resend.emails.send({
+    // Resend SDK quirk: errors come back in `result.error`, NOT as thrown
+    // exceptions for most non-network failures. Must check both paths.
+    const sendResult = await resend.emails.send({
       from: FROM_EMAIL,
       to: lead.email,
       subject,
       html,
     });
+
+    if (sendResult.error) {
+      console.error("[Email] ❌ Resend rejected the send:", {
+        name: sendResult.error.name,
+        message: sendResult.error.message,
+        from: FROM_EMAIL,
+        to: lead.email,
+      });
+      throw new Error(`Resend rejected: ${sendResult.error.message}`);
+    }
+
+    console.log("[Email] ✅ Sent successfully:", {
+      id: sendResult.data?.id,
+      from: FROM_EMAIL,
+      to: lead.email,
+    });
   } catch (err) {
-    console.error("[Email] Send failed:", err);
-    throw err; // Re-throw so caller can handle
+    console.error("[Email] ❌ Send threw exception:", {
+      message: err instanceof Error ? err.message : String(err),
+      from: FROM_EMAIL,
+      to: lead.email,
+    });
+    throw err;
   }
 }
