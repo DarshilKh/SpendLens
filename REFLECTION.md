@@ -18,11 +18,11 @@
 
 ## 2. A decision I reversed mid-week
 
-**Original decision:** I started building the audit engine to use the Anthropic API for generating recommendations — prompt: "Given this tool and plan, is the user overpaying? Respond with JSON."
+**Original decision:** On Day 1 I planned to use the Anthropic API to generate the audit recommendations themselves — prompt: "Given this tool, plan, seat count, and spend, is the user overpaying? Respond with JSON containing recommendedAction, reason, and estimatedSavings." The idea was that an LLM would handle edge cases I hadn't thought of and reduce the amount of rule-writing I'd need to do.
 
-**Why I reversed it:** On Day 2, while writing tests, I realized this was wrong in two ways. First, it made the engine non-deterministic — the same input would produce slightly different recommendations on each call, making the output untrustworthy for financial decisions. Second, the assignment explicitly hints that "knowing when not to use AI is part of the test." A CFO reviewing these recommendations needs to be able to trace every savings figure to a source — LLM reasoning doesn't give you that.
+**Why I reversed it:** On Day 2, while writing the first tests, I ran the same input three times and got three slightly different `estimatedSavings` values. That was the moment I knew the approach was wrong. Audit recommendations that show "$240/month savings" on one run and "$190/month" on the next are not audit recommendations — they're opinions. A CFO reviewing this output needs to be able to ask "how did you get that number?" and get a traceable answer. LLM reasoning can't give you that. There's also a subtler problem: the model would sometimes recommend switching tools based on capability reasoning that contradicted the user's stated use case. It had no way to know that a writing team shouldn't be told to switch to Cursor.
 
-**What I did instead:** Hardcoded rule-based logic against verified pricing data. Every recommendation has a `reasoning` string that cites specific numbers ("Cursor Business adds team management at $40/seat; Pro at $20/seat delivers identical AI performance for teams under 10"). A finance person can verify every claim. AI is reserved for the summary paragraph — narrative synthesis, not arithmetic.
+**What I did instead:** Hardcoded deterministic rule-based logic against verified pricing data. Every recommendation has a `reasoning` string that cites the exact price delta and the threshold rule that triggered it — e.g., "Cursor Teams ($40/seat) requires a minimum 3-seat purchase; your 2-person team is paying for a seat nobody uses. Downgrade to Pro ($20/seat) — identical model access, no seat minimum." A finance person can verify every claim in under 30 seconds. AI is strictly reserved for the summary paragraph, where synthesis and narrative tone are the goal, not arithmetic.
 
 ---
 
