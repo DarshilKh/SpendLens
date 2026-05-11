@@ -2,16 +2,18 @@
 
 ## What a converted lead is worth to Credex
 
-Credex's business model: buy overstock AI credits at a discount, sell to startups below retail. Margin is on the spread.
+Credex's business model: source overstock AI infrastructure credits at a discount from companies that over-provisioned, sell to startups below retail. Margin is the spread between acquisition cost and sale price.
 
 **Assumptions (show reasoning):**
-- Average credit purchase: $5,000 (conservative; typical deal for a startup burning $1-3k/mo on AI APIs)
-- Credex margin on credits: 15-20% gross margin (industry-standard for credit/infrastructure resale)
-- Gross profit per deal: ~$750-1,000
-- Repeat purchase rate: ~40% within 6 months (credits are consumable; satisfied buyers reorder)
-- LTV over 18 months (2.5 purchases avg): ~$1,875-2,500
 
-**Conclusion:** A converted consultation → credit purchase is worth approximately **$1,500-2,500 LTV** to Credex over 18 months.
+- **Average credit purchase: $5,000.** A startup burning $1,000–3,000/mo on Anthropic or OpenAI API will typically buy 2–3 months of runway in credits at a time to lock in the discount. $5,000 is the conservative midpoint; high-API-spend customers (the ones SpendLens flags as `credexRelevant`) tend to be $8,000–15,000 per transaction.
+- **Credex gross margin: 15–20%.** Standard for infrastructure credit/software resale with volume sourcing. Assume 17% for base math.
+- **Gross profit per transaction: ~$850** ($5,000 × 17%).
+- **Repeat purchase rate: ~40% within 6 months.** Credits are consumable — satisfied buyers reorder when their balance runs low. 40% is conservative; a buyer who saved 30% on their first purchase has strong incentive to return.
+- **Average purchases over 18 months: 2.5** (first purchase + 1.5 repeat transactions on average, blended across the 40% repeat cohort).
+- **LTV over 18 months: ~$2,125** ($850 gross profit × 2.5 transactions).
+
+**Conclusion:** A converted consultation → credit purchase is worth approximately **$2,000–2,500 LTV** to Credex over 18 months. For high-API-spend customers ($15,000+ transactions), LTV exceeds $5,000. SpendLens is specifically designed to surface those customers first.
 
 ---
 
@@ -34,24 +36,29 @@ Credex's business model: buy overstock AI credits at a discount, sell to startup
 
 ```
 Landing page visitors
-  ↓ 30% start form
+  ↓ 30% start form              [barrier: does the headline convince them to try?]
 Form starts
-  ↓ 70% complete form
+  ↓ 70% complete form           [barrier: is the form short enough / clear enough?]
 Audits completed
-  ↓ 35% enter email
+  ↓ 35% enter email             [barrier: did results show enough value?]
 Email captures
-  ↓ 20% of high-savings users book consultation
-Consultations
-  ↓ 40% convert to credit purchase
+  ↓ ~43% are high-savings cases [filter: >$500/mo identified savings]
+High-savings emails
+  ↓ 20% book consultation       [barrier: is the Credex CTA credible?]
+Consultations booked
+  ↓ 40% convert to purchase     [barrier: is Credex inventory available for their tools?]
 Credit purchases
 ```
 
-**Breakeven math:**
-- 1,000 visitors → 300 start form → 210 complete audit → 73 emails
-- Of 73 emails, assume 30 are "high savings" cases (>$500/mo savings) → 6 consultations → 2-3 purchases
-- 2-3 purchases × $1,500 LTV = **$3,000-4,500 revenue per 1,000 visitors**
-- At $0 CAC (organic): any revenue is profitable
-- Tool hosting cost on Vercel: ~$20-50/mo at this traffic level
+**Breakeven math per 1,000 visitors:**
+- 1,000 visitors → 300 form starts → 210 audits completed → 73 email captures
+- Of 73 emails: ~32 are high-savings (>$500/mo identified savings) → 6 consultations → 2–3 purchases
+- 2–3 purchases × $2,125 LTV = **$4,250–6,375 gross profit per 1,000 visitors**
+- At $0 paid CAC (organic launch): profitable from visitor #1
+- Vercel hosting at this traffic: ~$20–50/mo — essentially $0 against the revenue
+
+**Where the funnel leaks and how to fix it:**
+The biggest single leak is the 35% email capture rate. Users who complete the audit but don't enter their email saw the value and still didn't convert — the most likely reason is that the savings figure wasn't large enough to feel worth the friction. Solution: for low-savings audits (<$100/mo), replace the email gate with a "notify me" opt-in framed as benchmark alerts rather than report delivery. Lower the ask to match the value delivered.
 
 ---
 

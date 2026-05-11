@@ -18,8 +18,11 @@
 - "how much are startups spending on AI tools"
 - "anthropic api cost optimization"
 - "cursor business 40 per user worth it"
+- "github copilot enterprise vs business", "do I need copilot enterprise"
+- "gemini workspace vs chatgpt team"
+- "windsurf vs cursor pricing"
 
-These are high-intent searches from people actively evaluating. SpendLens should rank for these.
+These are high-intent searches from people actively mid-decision. The moment someone searches "is cursor business worth it for small teams" they are 10 minutes away from either paying for something they don't need or cancelling something they should downgrade. SpendLens should be the first result they find. The content angle: a simple comparison page titled "Cursor Teams vs Pro — which plan is right for your team size?" with the audit tool embedded. That page ranks, gets the click, runs the audit, and captures the lead. SEO is not the primary launch strategy but it's a compounding asset worth seeding on day one.
 
 ---
 
@@ -61,7 +64,13 @@ Post in YC alumni Slack, Indie Hackers forums, and Product Hunt Upcoming. These 
 
 ## The unfair distribution channel
 
-Credex's existing customer base. Every company that has ever purchased AI credits through Credex is a warm lead who already cares about AI costs. An email to the Credex customer list offering a free audit of their remaining tools would convert at 20-30%+ vs cold traffic at ~2-3%. No paid budget needed, no cold outreach — just a tool sent to people who are already bought in on the problem.
+Credex's existing customer base — and this is the one thing no competitor can replicate.
+
+Every company that has purchased AI credits through Credex has already demonstrated two things: they care enough about AI costs to seek an alternative to retail, and they trust Credex to deliver on that. An email to the Credex customer list — "free tool to audit the AI subscriptions we don't cover yet" — converts at an estimated 20–30% vs 2–3% for cold traffic, because it arrives from a vendor they've already paid.
+
+The mechanic: Credex sends a single email to existing customers. Subject: "How much are you spending on the AI tools outside your Credex credits?" Body: one paragraph, one link to SpendLens. No pitch, no pressure. The audit does the selling. For customers with large API spend who are already on Credex credits, the audit might surface that their Cursor or GitHub Copilot spend is also ripe for credits — expanding the Credex relationship rather than just generating a new one.
+
+This is not just a distribution channel. It's a retention and expansion mechanism for Credex's existing book of business.
 
 ---
 
