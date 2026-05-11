@@ -11,7 +11,7 @@ function makeFormData(tools: ToolEntry[], overrides?: Partial<AuditFormData>): A
   return { tools, teamSize: 5, useCase: "coding", companyName: "Test Corp", ...overrides };
 }
 
-// ─── Structure tests ─────────────────────────────────────────────────────────
+// ─── Structure tests ──────────────────────────────────────────────────────────
 
 describe("Audit Engine — Output Shape", () => {
   it("returns all required fields", () => {
@@ -37,14 +37,14 @@ describe("Audit Engine — Output Shape", () => {
   it("correctly totals current monthly spend", () => {
     const result = runAuditEngine(makeFormData([
       makeEntry("cursor", "pro", 2, 40),
-      makeEntry("github_copilot", "individual", 2, 20),
+      makeEntry("github_copilot", "pro", 2, 20),
       makeEntry("claude", "pro", 1, 20),
     ]));
     expect(result.totalCurrentMonthlySpend).toBe(80);
   });
 
-  it("annual savings = monthly × 12", () => {
-    const result = runAuditEngine(makeFormData([makeEntry("cursor", "business", 2, 80)], { teamSize: 2 }));
+  it("annual savings = monthly x 12", () => {
+    const result = runAuditEngine(makeFormData([makeEntry("cursor", "teams", 2, 80)], { teamSize: 2 }));
     expect(result.totalAnnualSavings).toBe(result.totalMonthlySavings * 12);
   });
 
@@ -60,24 +60,23 @@ describe("Audit Engine — Output Shape", () => {
 // ─── Plan downgrade detection ─────────────────────────────────────────────────
 
 describe("Audit Engine — Plan Fit Rules", () => {
-  it("flags Cursor Business as overprovision for a 3-person team", () => {
-    const result = runAuditEngine(makeFormData([makeEntry("cursor", "business", 3, 120)], { teamSize: 3 }));
+  it("flags Cursor Teams as overprovision for a 3-person team", () => {
+    const result = runAuditEngine(makeFormData([makeEntry("cursor", "teams", 3, 120)], { teamSize: 3 }));
     const rec = result.recommendations[0];
     expect(rec.severity).toBe("savings");
     expect(rec.monthlySavings).toBeGreaterThan(0);
     expect(rec.recommendedPlanId).toBe("pro");
   });
 
-  it("does NOT flag Cursor Business for an 8-person team", () => {
-    const result = runAuditEngine(makeFormData([makeEntry("cursor", "business", 8, 320)], { teamSize: 8 }));
+  it("does NOT flag Cursor Teams for an 8-person team", () => {
+    const result = runAuditEngine(makeFormData([makeEntry("cursor", "teams", 8, 320)], { teamSize: 8 }));
     const rec = result.recommendations[0];
     expect(rec.monthlySavings).toBe(0);
     expect(["optimal", "info"]).toContain(rec.severity);
   });
 
-  it("does NOT flag Cursor Business for a 12-person team", () => {
-    // This was the bug: 12 people with Business should NOT be flagged
-    const result = runAuditEngine(makeFormData([makeEntry("cursor", "business", 12, 480)], { teamSize: 12 }));
+  it("does NOT flag Cursor Teams for a 12-person team", () => {
+    const result = runAuditEngine(makeFormData([makeEntry("cursor", "teams", 12, 480)], { teamSize: 12 }));
     const rec = result.recommendations[0];
     expect(rec.monthlySavings).toBe(0);
     expect(rec.severity).toBe("optimal");
@@ -97,8 +96,8 @@ describe("Audit Engine — Plan Fit Rules", () => {
     expect(rec.monthlySavings).toBe(0);
   });
 
-  it("flags ChatGPT Team with 1 seat as overprovision", () => {
-    const result = runAuditEngine(makeFormData([makeEntry("chatgpt", "team", 1, 30)], { teamSize: 1 }));
+  it("flags ChatGPT Business with 1 seat as single-user waste", () => {
+    const result = runAuditEngine(makeFormData([makeEntry("chatgpt", "business", 1, 25)], { teamSize: 1 }));
     const rec = result.recommendations[0];
     expect(rec.severity).toBe("savings");
     expect(rec.monthlySavings).toBeGreaterThan(0);
@@ -138,7 +137,7 @@ describe("Audit Engine — Credits Rules", () => {
   });
 });
 
-// ─── High savings cases ───────────────────────────────────────────────────────
+// ─── Aggregates ───────────────────────────────────────────────────────────────
 
 describe("Audit Engine — Aggregates", () => {
   it("highSavingsCase=true when savings > $500/mo", () => {
@@ -170,19 +169,19 @@ describe("Audit Engine — Aggregates", () => {
   });
 });
 
-// ─── Benchmark ───────────────────────────────────────────────────────────────
+// ─── Benchmark ────────────────────────────────────────────────────────────────
 
 describe("Audit Engine — Benchmark", () => {
   it("calculates spend per developer correctly", () => {
     const result = runAuditEngine(makeFormData([
       makeEntry("cursor", "pro", 5, 100),
-      makeEntry("github_copilot", "individual", 5, 50),
+      makeEntry("github_copilot", "pro", 5, 50),
     ], { teamSize: 5 }));
     expect(result.benchmark.spendPerDeveloper).toBe(30); // $150 / 5
   });
 
   it("benchmark percentile is clamped between 0 and 100", () => {
-    const result = runAuditEngine(makeFormData([makeEntry("cursor", "business", 50, 5000)], { teamSize: 50 }));
+    const result = runAuditEngine(makeFormData([makeEntry("cursor", "teams", 50, 5000)], { teamSize: 50 }));
     expect(result.benchmark.percentile).toBeGreaterThanOrEqual(0);
     expect(result.benchmark.percentile).toBeLessThanOrEqual(100);
   });
@@ -197,38 +196,37 @@ describe("Audit Engine — Benchmark", () => {
 // ─── Nuanced thresholds ───────────────────────────────────────────────────────
 
 describe("Audit Engine — Nuanced Threshold Correctness", () => {
-  it("Cursor Business with 5 seats: minor_opportunity not savings", () => {
-    const result = runAuditEngine(makeFormData([makeEntry("cursor", "business", 5, 200)], { teamSize: 5 }));
+  it("Cursor Teams with 5 seats is borderline — info or optimal, not an aggressive savings flag", () => {
+    const result = runAuditEngine(makeFormData([makeEntry("cursor", "teams", 5, 200)], { teamSize: 5 }));
     const rec = result.recommendations[0];
-    // At 5 seats it's borderline — could be minor or optimal, NOT a big downgrade
     expect(["info", "optimal"]).toContain(rec.severity);
   });
 
   it("Windsurf Teams with 2 seats flags overprovision", () => {
-    const result = runAuditEngine(makeFormData([makeEntry("windsurf", "teams", 2, 70)], { teamSize: 2 }));
+    const result = runAuditEngine(makeFormData([makeEntry("windsurf", "teams", 2, 80)], { teamSize: 2 }));
     const rec = result.recommendations[0];
     expect(rec.severity).toBe("savings");
     expect(rec.recommendedPlanId).toBe("pro");
   });
 
-  it("Claude Max with large team triggers overprovision warning", () => {
-    const result = runAuditEngine(makeFormData([makeEntry("claude", "max", 5, 500)], { teamSize: 10 }));
+  it("Claude Max 5x with 5 seats on 10-person team triggers overprovision warning", () => {
+    const result = runAuditEngine(makeFormData([makeEntry("claude", "max_5x", 5, 500)], { teamSize: 10 }));
     const rec = result.recommendations[0];
     expect(rec.severity).toBe("savings");
     expect(rec.monthlySavings).toBeGreaterThan(0);
   });
 
-  it("Copilot Individual with 12-person team suggests upgrade", () => {
-    const result = runAuditEngine(makeFormData([makeEntry("github_copilot", "individual", 12, 120)], { teamSize: 12 }));
+  it("GitHub Copilot Pro with 12-person team suggests upgrade to Business", () => {
+    const result = runAuditEngine(makeFormData([makeEntry("github_copilot", "pro", 12, 120)], { teamSize: 12 }));
     const rec = result.recommendations[0];
     expect(rec.recommendationType).toBe("upgrade_recommended");
   });
 
   it("multi-tool mixed result produces correct totals", () => {
     const result = runAuditEngine(makeFormData([
-      makeEntry("cursor", "business", 2, 80),        // savings
-      makeEntry("github_copilot", "individual", 2, 20), // optimal
-      makeEntry("anthropic_api", "pay_as_you_go", 1, 300), // credits
+      makeEntry("cursor", "teams", 2, 80),
+      makeEntry("github_copilot", "pro", 2, 20),
+      makeEntry("anthropic_api", "pay_as_you_go", 1, 300),
     ], { teamSize: 2 }));
     expect(result.recommendations).toHaveLength(3);
     expect(result.totalCurrentMonthlySpend).toBe(400);
