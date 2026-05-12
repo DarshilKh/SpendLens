@@ -4,7 +4,7 @@ One entry per day for the 7-day window. Format follows the assignment spec exact
 
 ---
 
-## Day 1 — 2025-05-06
+## Day 1 — 2026-05-06
 
 **Hours worked:** 2
 
@@ -22,7 +22,7 @@ Bootstrap the project, pick the stack, choose a color palette, set up Supabase, 
 
 ---
 
-## Day 2 — 2025-05-07
+## Day 2 — 2026-05-07
 
 **Hours worked:** 5
 
@@ -40,7 +40,7 @@ Build the core — pricing data, audit engine, tests. Write the tests before the
 
 ---
 
-## Day 3 — 2025-05-08
+## Day 3 — 2026-05-08
 
 **Hours worked:** 4
 
@@ -58,7 +58,7 @@ Finish the audit engine for all 8 tools. Fix the analysis display — it's loadi
 
 ---
 
-## Day 4 — 2025-05-09
+## Day 4 — 2026-05-09
 
 **Hours worked:** 6
 
@@ -82,7 +82,7 @@ Verify all pricing data against live vendor pages as of today. Fix the enterpris
 
 ---
 
-## Day 5 — 2025-05-10
+## Day 5 — 2026-05-10
 
 **Hours worked:** 6
 
@@ -106,7 +106,7 @@ Third user interview. Fix all the .md documentation files. Enhance landing featu
 
 ---
 
-## Day 6 — 2025-05-11
+## Day 6 — 2026-05-11
 
 **Hours worked:** 5
 
@@ -132,7 +132,7 @@ Final QA pass on production URL. Add screenshots to README. Review every require
 
 ---
 
-## Day 7 — 2025-05-12
+## Day 7 — 2026-05-12
 
 **Hours worked:** 4
 
