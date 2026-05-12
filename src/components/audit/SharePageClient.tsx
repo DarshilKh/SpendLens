@@ -6,9 +6,9 @@ import type { StoredAudit } from "@/types";
 import AuditResults from "@/components/audit/AuditResults";
 import type { AuditResult } from "@/types";
 
-interface Props { stored: StoredAudit; _slug: string; }
+interface Props { stored: StoredAudit; slug: string; }
 
-export default function SharePageClient({ stored, _slug }: Props) {
+export default function SharePageClient({ stored, slug: _slug }: Props) {
   const result: AuditResult = {
     ...stored.result,
     id: stored.id,
