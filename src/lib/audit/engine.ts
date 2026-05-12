@@ -26,6 +26,7 @@ function classifyOrg(teamSize: number): OrgTier {
   if (teamSize <= 100) return "midmarket";
   return "enterprise";
 }
+
 const PROCUREMENT_FLOOR: Record<string, Record<OrgTier, string[]>> = {
   cursor: {
     solo: ["pro", "pro_plus", "ultra", "teams", "enterprise"],
@@ -101,12 +102,12 @@ const seatsCurrentlyProvisioned = (seats: number): string =>
 const atSeatCount = (seats: number): string =>
   `at your current ${seats}-seat deployment`;
 
-const capitalize = (s: string): string =>
-  s.charAt(0).toUpperCase() + s.slice(1);
+const ENTERPRISE_OVERKILL_THRESHOLD = 25;  // below this → overkill
+const ENTERPRISE_VERIFY_THRESHOLD = 49;    // <= this → verify scope
 
-
-const ENTERPRISE_OVERKILL_THRESHOLD = 25; // below this → overkill
-const ENTERPRISE_VERIFY_THRESHOLD = 50;   // below this → verify scope
+// Fraction of Team Premium seats that realistically need Claude Code daily.
+// Used to compute a blended cost when recommending a mixed seat tier strategy.
+const CLAUDE_PREMIUM_BLEND_RATIO = 0.4;
 
 // ─── Plan Evaluation ──────────────────────────────────────────────────────────
 
@@ -171,7 +172,6 @@ function evaluatePlanFit(
     if (entry.planId === "enterprise") {
       const teamsPlan = getPlanById("cursor", "teams");
 
-      // True overkill: small/growing orgs that don't yet need Enterprise governance
       if (teamSize < ENTERPRISE_OVERKILL_THRESHOLD && teamsPlan) {
         return {
           recommendationType: "enterprise_overkill",
@@ -186,8 +186,7 @@ function evaluatePlanFit(
         };
       }
 
-      // Verify scope: 25–49 engineers — Enterprise is reasonable but worth auditing
-      if (teamSize < ENTERPRISE_VERIFY_THRESHOLD && teamsPlan) {
+      if (teamSize <= ENTERPRISE_VERIFY_THRESHOLD && teamsPlan) {
         return {
           recommendationType: "minor_opportunity",
           severity: "info",
@@ -201,7 +200,6 @@ function evaluatePlanFit(
         };
       }
 
-      // 50+ engineers: Cursor Enterprise is genuinely the right tier
       return {
         recommendationType: "strong_roi",
         severity: "optimal",
@@ -375,7 +373,6 @@ function evaluatePlanFit(
     if (entry.planId === "enterprise") {
       const bizPlan = getPlanById("github_copilot", "business");
 
-      // True overkill: small orgs that don't yet benefit from personalized models
       if (teamSize < 15 && bizPlan) {
         const hint =
           entry.seats < 15
@@ -394,8 +391,20 @@ function evaluatePlanFit(
         };
       }
 
-      // Verify scope: 25–49 engineers
-      if (teamSize < ENTERPRISE_VERIFY_THRESHOLD && bizPlan) {
+      // Well matched: 15–24 engineers — Enterprise is appropriate, no flag
+      if (teamSize < ENTERPRISE_OVERKILL_THRESHOLD) {
+        return {
+          recommendationType: "already_optimal",
+          severity: "optimal",
+          statusLabel: "Well matched",
+          isActionable: false,
+          recommendedCostPerSeat: costPerSeat,
+          reasoning: `Copilot Enterprise is appropriate ${atSeatCount(entry.seats)} for a ${teamSize}-person org. At 15+ engineers, personalized codebase models begin to deliver meaningful lift over Business, and the GHEC requirement is typically already in place at this scale.`,
+          confidence: "high",
+        };
+      }
+
+      if (teamSize <= ENTERPRISE_VERIFY_THRESHOLD && bizPlan) {
         return {
           recommendationType: "minor_opportunity",
           severity: "info",
@@ -409,7 +418,6 @@ function evaluatePlanFit(
         };
       }
 
-      // 50+ engineers: Enterprise is genuinely the right tier
       return {
         recommendationType: "strong_roi",
         severity: "optimal",
@@ -517,8 +525,6 @@ function evaluatePlanFit(
   if (tool.id === "claude") {
 
     if (entry.planId === "enterprise") {
-      // Enterprise is an annual-only contract — almost always appropriate when
-      // purchased. Flag only genuinely small orgs that may have over-bought.
       if (teamSize < ENTERPRISE_OVERKILL_THRESHOLD) {
         const teamPremium = getPlanById("claude", "team_premium");
         if (teamPremium) {
@@ -536,8 +542,7 @@ function evaluatePlanFit(
         }
       }
 
-      // Verify scope: 25–49 engineers
-      if (teamSize < ENTERPRISE_VERIFY_THRESHOLD) {
+      if (teamSize <= ENTERPRISE_VERIFY_THRESHOLD) {
         const teamPremium = getPlanById("claude", "team_premium");
         if (teamPremium) {
           return {
@@ -554,7 +559,6 @@ function evaluatePlanFit(
         }
       }
 
-      // 50+ engineers: Enterprise is justified
       return {
         recommendationType: "strong_roi",
         severity: "optimal",
@@ -657,6 +661,11 @@ function evaluatePlanFit(
     if (entry.planId === "team_premium") {
       const teamStandard = getPlanById("claude", "team_standard");
       if (teamStandard) {
+        // CLAUDE_PREMIUM_BLEND_RATIO represents the fraction of seats that
+        // realistically need Claude Code daily. The remainder drops to Standard.
+        const blendedCostPerSeat =
+          teamStandard.monthlyPricePerSeat * (1 - CLAUDE_PREMIUM_BLEND_RATIO) +
+          125 * CLAUDE_PREMIUM_BLEND_RATIO;
         return {
           recommendationType: "minor_opportunity",
           severity: "info",
@@ -664,7 +673,7 @@ function evaluatePlanFit(
           isActionable: true,
           betterPlanId: "team_standard",
           betterPlanName: "Team Standard (mixed)",
-          recommendedCostPerSeat: teamStandard.monthlyPricePerSeat * 0.6 + 125 * 0.4,
+          recommendedCostPerSeat: blendedCostPerSeat,
           reasoning: `Claude Team Premium at $125/seat includes Claude Code and Cowork. Across ${seatsCurrentlyProvisioned(entry.seats)}, fewer than half typically need Claude Code daily. Anthropic allows mixing seat tiers within a Team plan — assigning Premium only to active Code users and Standard ($25/seat) to the rest can cut total cost 40–60% with no functional loss.`,
           confidence: "medium",
         };
@@ -761,7 +770,6 @@ function evaluatePlanFit(
   if (tool.id === "chatgpt") {
 
     if (entry.planId === "enterprise") {
-      // True overkill: small orgs that clearly don't need Enterprise scale
       if (teamSize < ENTERPRISE_OVERKILL_THRESHOLD) {
         const businessPlan = getPlanById("chatgpt", "business");
         if (businessPlan) {
@@ -773,14 +781,13 @@ function evaluatePlanFit(
             betterPlanId: "business",
             betterPlanName: "Business",
             recommendedCostPerSeat: businessPlan.monthlyPricePerSeat,
-            reasoning: `ChatGPT Enterprise targets organizations with EKM, SCIM, advanced analytics, and annual contracts — features that pay off at 100+ seats or under regulated workloads. For a ${teamSize}-person org, Business at $20/seat (annual) provides equivalent SSO, training-data exclusion, and SOC 2 compliance at a fraction of the cost.`,
+            reasoning: `ChatGPT Enterprise targets organizations with EKM, SCIM, advanced analytics, and annual contracts — features that pay off at 100+ seats or under regulated workloads. For a ${teamSize}-person org, Business pricing currently starts around $20/user on annual billing, providing equivalent SSO, training-data exclusion, and SOC 2 compliance at a fraction of the cost.`,
             confidence: "high",
           };
         }
       }
 
-      // Verify scope: 25–49 engineers
-      if (teamSize < ENTERPRISE_VERIFY_THRESHOLD) {
+      if (teamSize <= ENTERPRISE_VERIFY_THRESHOLD) {
         const businessPlan = getPlanById("chatgpt", "business");
         if (businessPlan) {
           return {
@@ -791,14 +798,12 @@ function evaluatePlanFit(
             betterPlanId: "business",
             betterPlanName: "Business",
             recommendedCostPerSeat: businessPlan.monthlyPricePerSeat,
-            reasoning: `ChatGPT Enterprise's premium features — EKM, SCIM, custom data retention, advanced analytics — are most valuable at 100+ seats or under regulated workloads. For a ${teamSize}-person org, audit whether all ${entry.seats} Enterprise seats actively use these capabilities. A mixed deployment of Enterprise (for compliance-bound users) and Business at $20/seat (for general users) often reduces cost significantly without functional loss.`,
+            reasoning: `ChatGPT Enterprise's premium features — EKM, SCIM, custom data retention, advanced analytics — are most valuable at 100+ seats or under regulated workloads. For a ${teamSize}-person org, audit whether all ${entry.seats} Enterprise seats actively use these capabilities. A mixed deployment of Enterprise (for compliance-bound users) and Business (for general users) often reduces cost significantly without functional loss.`,
             confidence: "medium",
           };
         }
       }
 
-      // 50+ engineers: Enterprise is appropriate — but still frame "midmarket"
-      // as worth auditing given how expensive Enterprise is relative to Business
       if (orgTier === "midmarket") {
         const businessPlan = getPlanById("chatgpt", "business");
         if (businessPlan) {
@@ -810,13 +815,12 @@ function evaluatePlanFit(
             betterPlanId: "business",
             betterPlanName: "Business",
             recommendedCostPerSeat: businessPlan.monthlyPricePerSeat,
-            reasoning: `ChatGPT Enterprise's premium features — EKM, SCIM, custom data retention, advanced analytics — deliver the most value at 500+ seats or under regulated workloads. For a ${teamSize}-person org, confirm that all ${entry.seats} Enterprise seats actively use compliance-specific features. A mixed deployment — Enterprise for regulated users, Business at $20/seat for general users — often reduces cost 40–60% without functional loss.`,
+            reasoning: `ChatGPT Enterprise's premium features — EKM, SCIM, custom data retention, advanced analytics — deliver the most value at 500+ seats or under regulated workloads. For a ${teamSize}-person org, confirm that all ${entry.seats} Enterprise seats actively use compliance-specific features. A mixed deployment — Enterprise for regulated users, Business for general users — often reduces cost 40–60% without functional loss.`,
             confidence: "medium",
           };
         }
       }
 
-      // True enterprise scale: affirm
       return {
         recommendationType: "strong_roi",
         severity: "optimal",
@@ -840,7 +844,7 @@ function evaluatePlanFit(
             betterPlanId: "business",
             betterPlanName: "Business",
             recommendedCostPerSeat: businessPlan.monthlyPricePerSeat,
-            reasoning: `ChatGPT Pro at $200/seat is an individual subscription — no SSO, no admin console, no SOC 2 compliance, no training-data exclusion, no procurement contract. For a ${teamSize}-person org, Business at $20/seat provides org-grade governance with full GPT-5.5 access. For specific power users who genuinely need unlimited reasoning models, mix Business seats with a few Pro seats — but don't standardize an org on Pro.`,
+            reasoning: `ChatGPT Pro at $200/seat is an individual subscription — no SSO, no admin console, no SOC 2 compliance, no training-data exclusion, no procurement contract. For a ${teamSize}-person org, Business provides org-grade governance with full GPT-5.5 access. For specific power users who genuinely need unlimited reasoning models, mix Business seats with a few Pro seats — but don't standardize an org on Pro.`,
             confidence: "high",
           };
         }
@@ -884,7 +888,7 @@ function evaluatePlanFit(
         statusLabel: "Well matched",
         isActionable: false,
         recommendedCostPerSeat: costPerSeat,
-        reasoning: `ChatGPT Business provides excellent value ${atSeatCount(entry.seats)}. At $20/seat (annual), shared workspaces, SAML SSO, SOC 2 Type II, 60+ app integrations, and training-data exclusion meaningfully outperform Plus for collaborative use.`,
+        reasoning: `ChatGPT Business provides excellent value ${atSeatCount(entry.seats)}. Shared workspaces, SAML SSO, SOC 2 Type II, 60+ app integrations, and training-data exclusion meaningfully outperform Plus for collaborative use. Business pricing currently starts around $20/user on annual billing.`,
         confidence: "high",
       };
     }
@@ -901,7 +905,7 @@ function evaluatePlanFit(
             betterPlanId: "business",
             betterPlanName: "Business",
             recommendedCostPerSeat: businessPlan.monthlyPricePerSeat,
-            reasoning: `${seatsCurrentlyProvisioned(entry.seats)} on individual Plus subscriptions in a ${teamSize}-person org creates real liability: conversations may be used for training, no SSO, no admin controls, no SOC 2 compliance. Business is now $20/seat (annual) — the same price as Plus — with training-data exclusion and SAML SSO. Strict upgrade with zero cost penalty.`,
+            reasoning: `${seatsCurrentlyProvisioned(entry.seats)} on individual Plus subscriptions in a ${teamSize}-person org creates real liability: conversations may be used for training, no SSO, no admin controls, no SOC 2 compliance. Business pricing currently starts around $20/user on annual billing — the same price as Plus — with training-data exclusion and SAML SSO. Strict upgrade with zero cost penalty.`,
             confidence: "high",
           };
         }
@@ -917,7 +921,7 @@ function evaluatePlanFit(
             betterPlanId: "business",
             betterPlanName: "Business",
             recommendedCostPerSeat: businessPlan.monthlyPricePerSeat,
-            reasoning: `Across a ${teamSize}-person team on Plus, you're missing the data privacy and admin controls Business provides. Business at $20/seat (annual) — same price as Plus — adds training-data exclusion, SAML SSO, and 60+ integrations.`,
+            reasoning: `Across a ${teamSize}-person team on Plus, you're missing the data privacy and admin controls Business provides. Business pricing currently starts around $20/user on annual billing — same price as Plus — adding training-data exclusion, SAML SSO, and 60+ integrations.`,
             confidence: "high",
           };
         }
@@ -1061,7 +1065,6 @@ function evaluatePlanFit(
     if (entry.planId === "enterprise") {
       const teamsPlan = getPlanById("windsurf", "teams");
 
-      // True overkill: small orgs
       if (teamSize < ENTERPRISE_OVERKILL_THRESHOLD && teamsPlan) {
         return {
           recommendationType: "enterprise_overkill",
@@ -1076,8 +1079,7 @@ function evaluatePlanFit(
         };
       }
 
-      // Verify scope: 25–49 engineers
-      if (teamSize < ENTERPRISE_VERIFY_THRESHOLD && teamsPlan) {
+      if (teamSize <= ENTERPRISE_VERIFY_THRESHOLD && teamsPlan) {
         return {
           recommendationType: "minor_opportunity",
           severity: "info",
@@ -1091,7 +1093,6 @@ function evaluatePlanFit(
         };
       }
 
-      // 50+ engineers: Enterprise is justified
       return {
         recommendationType: "strong_roi",
         severity: "optimal",
@@ -1323,9 +1324,9 @@ export function runAuditEngine(
     const planEval = evaluatePlanFit(entry, useCase, teamSize);
     const creditsEval = evaluateCredits(entry);
     const altEval =
-    planEval.recommendationType === "already_optimal"
-    ? { hasAlternative: false, altCostPerSeat: 0, reason: "" }
-    : evaluateAlternatives(entry, useCase, teamSize);
+      planEval.recommendationType === "already_optimal"
+        ? { hasAlternative: false, altCostPerSeat: 0, reason: "" }
+        : evaluateAlternatives(entry, useCase, teamSize);
 
     let recommendationType: RecommendationType = planEval.recommendationType;
     let severity: RecommendationSeverity = planEval.severity;
@@ -1452,9 +1453,9 @@ export function runAuditEngine(
     industryAveragePerDeveloper: bucket.avg,
     percentile,
     label:
-      spendPerDeveloper < bucket.p25
+      percentile <= 35
         ? "below industry average"
-        : spendPerDeveloper > bucket.p75
+        : percentile >= 65
         ? "above industry average"
         : "within industry norms",
   };
