@@ -12,7 +12,7 @@ Built as a lead-generation asset for [Credex](https://credex.rocks) — no login
 
 ## Screenshots / Demo
 
-> 📹 30-second walkthrough: [Loom link — add before submission]
+> 📹 30-second walkthrough: https://www.dropbox.com/scl/fi/q0hj23rwib0adex6846dh/audit-rec.mp4?rlkey=94160f7anv6sjph5tcolcg56x&st=rd0r3p03&dl=0
 
 | Landing | Audit Form | Results |
 |---------|------------|---------|
