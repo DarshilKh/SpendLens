@@ -376,7 +376,7 @@ function evaluatePlanFit(
       const bizPlan = getPlanById("github_copilot", "business");
 
       // True overkill: small orgs that don't yet benefit from personalized models
-      if (teamSize < ENTERPRISE_OVERKILL_THRESHOLD && bizPlan) {
+      if (teamSize < 15 && bizPlan) {
         const hint =
           entry.seats < 15
             ? "personalized models require 15+ engineers and 6+ months of usage data to differentiate from Business"
@@ -1322,7 +1322,10 @@ export function runAuditEngine(
 
     const planEval = evaluatePlanFit(entry, useCase, teamSize);
     const creditsEval = evaluateCredits(entry);
-    const altEval = evaluateAlternatives(entry, useCase, teamSize);
+    const altEval =
+    planEval.recommendationType === "already_optimal"
+    ? { hasAlternative: false, altCostPerSeat: 0, reason: "" }
+    : evaluateAlternatives(entry, useCase, teamSize);
 
     let recommendationType: RecommendationType = planEval.recommendationType;
     let severity: RecommendationSeverity = planEval.severity;
