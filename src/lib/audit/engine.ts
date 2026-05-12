@@ -78,20 +78,6 @@ function isPlanReachable(toolId: string, planId: string, tier: OrgTier): boolean
   return allowed.includes(planId);
 }
 
-function getCheapestReachablePlan(toolId: string, tier: OrgTier) {
-  const allowed = PROCUREMENT_FLOOR[toolId]?.[tier];
-  if (!allowed?.length) return null;
-  const tool = getToolById(toolId);
-  if (!tool) return null;
-
-  const candidates = allowed
-    .map((pid) => tool.plans.find((p) => p.id === pid))
-    .filter((p): p is NonNullable<typeof p> => Boolean(p))
-    .sort((a, b) => a.monthlyPricePerSeat - b.monthlyPricePerSeat);
-
-  return candidates[0] ?? null;
-}
-
 // ─── Phrasing helpers ─────────────────────────────────────────────────────────
 const seatsCurrentlyAssigned = (seats: number): string =>
   `the ${seats} ${seats === 1 ? "seat" : "seats"} currently assigned`;
@@ -102,11 +88,10 @@ const seatsCurrentlyProvisioned = (seats: number): string =>
 const atSeatCount = (seats: number): string =>
   `at your current ${seats}-seat deployment`;
 
-const ENTERPRISE_OVERKILL_THRESHOLD = 25;  // below this → overkill
-const ENTERPRISE_VERIFY_THRESHOLD = 49;    // <= this → verify scope
+const ENTERPRISE_OVERKILL_THRESHOLD = 25;
+const ENTERPRISE_VERIFY_THRESHOLD = 49;
 
 // Fraction of Team Premium seats that realistically need Claude Code daily.
-// Used to compute a blended cost when recommending a mixed seat tier strategy.
 const CLAUDE_PREMIUM_BLEND_RATIO = 0.4;
 
 // ─── Plan Evaluation ──────────────────────────────────────────────────────────
@@ -148,7 +133,6 @@ function evaluatePlanFit(
   const costPerSeat = currentPlan.monthlyPricePerSeat;
   const expectedTotal = costPerSeat * entry.seats;
 
-  // ── Spend anomaly: reported vs expected ──────────────────────────────
   if (expectedTotal > 0 && entry.monthlySpend > expectedTotal * 1.25 && costPerSeat > 0) {
     const pctOver = Math.round(
       ((entry.monthlySpend - expectedTotal) / expectedTotal) * 100
@@ -391,7 +375,6 @@ function evaluatePlanFit(
         };
       }
 
-      // Well matched: 15–24 engineers — Enterprise is appropriate, no flag
       if (teamSize < ENTERPRISE_OVERKILL_THRESHOLD) {
         return {
           recommendationType: "already_optimal",
@@ -661,8 +644,6 @@ function evaluatePlanFit(
     if (entry.planId === "team_premium") {
       const teamStandard = getPlanById("claude", "team_standard");
       if (teamStandard) {
-        // CLAUDE_PREMIUM_BLEND_RATIO represents the fraction of seats that
-        // realistically need Claude Code daily. The remainder drops to Standard.
         const blendedCostPerSeat =
           teamStandard.monthlyPricePerSeat * (1 - CLAUDE_PREMIUM_BLEND_RATIO) +
           125 * CLAUDE_PREMIUM_BLEND_RATIO;
@@ -1194,7 +1175,6 @@ function evaluatePlanFit(
     }
   }
 
-  // ─── Default ───────────────────────────────────────────────────────────
   return {
     recommendationType: "already_optimal",
     severity: "optimal",
@@ -1206,7 +1186,6 @@ function evaluatePlanFit(
   };
 }
 
-// ─── Credits Evaluation ───────────────────────────────────────────────────────
 function evaluateCredits(entry: ToolEntry): {
   suggest: boolean;
   discount: number;
@@ -1228,7 +1207,6 @@ function evaluateCredits(entry: ToolEntry): {
   };
 }
 
-// ─── Alternatives Evaluation ──────────────────────────────────────────────────
 function evaluateAlternatives(
   entry: ToolEntry,
   _useCase: string,
@@ -1277,9 +1255,6 @@ function evaluateAlternatives(
   };
 }
 
-// ═════════════════════════════════════════════════════════════════════════════
-// SAVINGS CAP — large orgs realistically can't recover 60%+ of spend
-// ═════════════════════════════════════════════════════════════════════════════
 function getMaxRealisticSavingsRatio(teamSize: number): number {
   const tier = classifyOrg(teamSize);
   switch (tier) {
@@ -1291,7 +1266,6 @@ function getMaxRealisticSavingsRatio(teamSize: number): number {
   }
 }
 
-// ─── Main Audit Engine ────────────────────────────────────────────────────────
 export function runAuditEngine(
   formData: AuditFormData
 ): Omit<AuditResult, "aiSummary" | "aiSummaryFallback"> {
@@ -1401,7 +1375,6 @@ export function runAuditEngine(
     };
   });
 
-  // ─── Aggregates with savings cap ────────────────────────────────────────
   const totalCurrentMonthlySpend = recommendations.reduce(
     (s, r) => s + r.currentMonthlyCost,
     0
@@ -1434,7 +1407,6 @@ export function runAuditEngine(
   );
   const highSavingsCase = totalMonthlySavings >= 500;
 
-  // ─── Benchmark ──────────────────────────────────────────────────────────
   const spendPerDeveloper =
     teamSize > 0 ? totalCurrentMonthlySpend / teamSize : totalCurrentMonthlySpend;
   const bucket =

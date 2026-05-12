@@ -6,14 +6,13 @@ import type { StoredAudit } from "@/types";
 import AuditResults from "@/components/audit/AuditResults";
 import type { AuditResult } from "@/types";
 
-interface Props { stored: StoredAudit; slug: string; }
+interface Props { stored: StoredAudit; _slug: string; }
 
-export default function SharePageClient({ stored, slug }: Props) {
+export default function SharePageClient({ stored, _slug }: Props) {
   const result: AuditResult = {
     ...stored.result,
     id: stored.id,
     shareSlug: stored.share_slug,
-    // Strip identifying info for public view
     formData: { ...stored.form_data, companyName: undefined },
   };
 

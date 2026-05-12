@@ -52,15 +52,10 @@
   }
 
   function init() {
-    // Find explicit container
     var container = document.getElementById(CONTAINER_ID);
-
-    // Find all script tags with data-spendlens attribute
-    var scripts = document.querySelectorAll("script[data-spendlens]");
 
     var config = {};
 
-    // Get config from current script tag
     var currentScript = document.currentScript;
     if (currentScript) {
       config.theme = currentScript.getAttribute("data-theme") || "light";
@@ -70,7 +65,6 @@
     if (container) {
       createWidget(container, config);
     } else if (currentScript) {
-      // Insert after the script tag
       var wrapper = document.createElement("div");
       currentScript.parentNode.insertBefore(wrapper, currentScript.nextSibling);
       createWidget(wrapper, config);

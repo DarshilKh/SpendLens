@@ -67,8 +67,6 @@ const SEVERITY_COLOR = {
   low: "var(--text-muted)",
 } as const;
 
-// Real, verifiable pricing data — no fake activity, no invented users.
-// Doubles as proof we actually have the dataset.
 const PRICING_SNAPSHOT = [
   { tool: "Cursor", plan: "Business", price: 40 },
   { tool: "Cursor", plan: "Pro", price: 20 },
@@ -78,13 +76,21 @@ const PRICING_SNAPSHOT = [
   { tool: "ChatGPT", plan: "Team", price: 25 },
 ] as const;
 
-const fadeUp = (delay: number): { initial: any; animate: any; transition: Transition } => ({
+const fadeUp = (delay: number): {
+  initial: { opacity: number; y: number };
+  animate: { opacity: number; y: number };
+  transition: Transition;
+} => ({
   initial: { opacity: 0, y: 14 },
   animate: { opacity: 1, y: 0 },
   transition: { delay, duration: 0.55, ease: EASE },
 });
 
-const fadeIn = (delay: number): { initial: any; animate: any; transition: Transition } => ({
+const fadeIn = (delay: number): {
+  initial: { opacity: number };
+  animate: { opacity: number };
+  transition: Transition;
+} => ({
   initial: { opacity: 0 },
   animate: { opacity: 1 },
   transition: { delay, duration: 0.5 },
@@ -222,11 +228,6 @@ export default function LandingHero() {
     </section>
   );
 }
-
-/* ─────────────────────────────────────────────────────────────
-   PRICING RAIL — fills the right side with verifiable proof
-   the dataset exists. No fake activity. No invented users.
-   ───────────────────────────────────────────────────────────── */
 
 function PricingRail() {
   return (
@@ -414,10 +415,6 @@ function PricingRail() {
     </motion.aside>
   );
 }
-
-/* ─────────────────────────────────────────────────────────────
-   AUDIT PREVIEW — full-width product screenshot below the fold
-   ───────────────────────────────────────────────────────────── */
 
 function AuditPreview() {
   return (

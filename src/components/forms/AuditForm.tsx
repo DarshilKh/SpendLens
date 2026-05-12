@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect, useRef } from "react";
+import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Plus, Trash2, ChevronDown, AlertCircle, Loader2, ArrowRight, Info } from "lucide-react";
 import { useAuditStore } from "@/store/audit-store";
@@ -14,7 +14,6 @@ const USE_CASES: { value: UseCase; label: string }[] = [
   { value: "mixed",    label: "Mixed / General" },
 ];
 
-// ─── Format the price label shown next to a plan name ────────────────────────
 function formatPlanPriceLabel(plan: PricingPlan): string {
   if (plan.priceType === "usage") {
     return " · Usage-based";
@@ -29,7 +28,6 @@ function formatPlanPriceLabel(plan: PricingPlan): string {
     : " · Free";
 }
 
-// ─── Clean number input — no native spinners, real placeholder support ───────
 function NumberField({
   id,
   value,
@@ -51,17 +49,14 @@ function NumberField({
   ariaLabel?: string;
   className?: string;
 }) {
-  // Internal string state lets the field be truly empty — not stuck at "1"
-  const [str, setStr] = useState<string>(
-    value === undefined || value === null || Number.isNaN(value) ? "" : String(value)
-  );
+  const [localStr, setLocalStr] = useState<string>("");
+  const [isFocused, setIsFocused] = useState(false);
 
-  // Keep in sync if parent updates value externally (e.g. autofill)
-  useEffect(() => {
-    const next = value === undefined || value === null || Number.isNaN(value) ? "" : String(value);
-    if (next !== str) setStr(next);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [value]);
+  const displayStr = isFocused
+    ? localStr
+    : value === undefined || value === null || Number.isNaN(value)
+    ? ""
+    : String(value);
 
   const commit = (raw: string) => {
     if (raw === "" || raw === "-") {
@@ -90,13 +85,19 @@ function NumberField({
         type="text"
         inputMode="numeric"
         pattern="[0-9]*"
-        value={str}
+        value={displayStr}
         onChange={(e) => {
-          // Strip everything except digits and dot
           const cleaned = e.target.value.replace(/[^\d.]/g, "");
-          setStr(cleaned);
+          setLocalStr(cleaned);
         }}
-        onBlur={() => commit(str)}
+        onFocus={() => {
+          setIsFocused(true);
+          setLocalStr(displayStr);
+        }}
+        onBlur={() => {
+          setIsFocused(false);
+          commit(localStr);
+        }}
         onKeyDown={(e) => {
           if (e.key === "Enter") (e.currentTarget as HTMLInputElement).blur();
         }}
@@ -127,9 +128,7 @@ export default function AuditForm() {
   } = useAuditStore();
 
   const [isSubmitting, setIsSubmitting] = useState(false);
-  // Track which tool entries the user has manually edited the spend on —
-  // we only auto-fill if they haven't touched it yet
-  const userEditedSpend = useRef<Set<string>>(new Set());
+  const [userEditedSpend, setUserEditedSpend] = useState<Set<string>>(new Set());
 
   const availableTools = TOOLS.filter(
     (t) => !formData.tools.some((e) => e.toolId === t.id)
@@ -138,7 +137,6 @@ export default function AuditForm() {
   const handleAddTool = (toolId: ToolId) => {
     const tool = TOOLS.find((t) => t.id === toolId);
     if (!tool) return;
-    // Pick the first standard-priced plan as default; fall back to first plan
     const defaultPlan =
       tool.plans.find(
         (p) => p.monthlyPricePerSeat > 0 && !p.priceType
@@ -146,12 +144,8 @@ export default function AuditForm() {
     addTool(toolId, defaultPlan.id);
   };
 
-  // ─── Auto-fill spend whenever plan or seat count changes ──────────────────
-  // Only fires for STANDARD per-seat plans. Usage-based and custom-quoted
-  // plans are user-entered because they have no predictable seat × price
-  // relationship.
   const recalcSpend = (entryId: string, planId: string, seats: number | undefined) => {
-    if (userEditedSpend.current.has(entryId)) return;
+    if (userEditedSpend.has(entryId)) return;
     if (!seats) return;
     const entry = formData.tools.find((t) => t.id === entryId);
     if (!entry) return;
@@ -159,12 +153,7 @@ export default function AuditForm() {
     if (!tool) return;
     const plan = tool.plans.find((p) => p.id === planId);
     if (!plan) return;
-
-    // Don't auto-fill for usage-based or custom plans
-    if (plan.priceType === "usage" || plan.priceType === "custom") {
-      return;
-    }
-
+    if (plan.priceType === "usage" || plan.priceType === "custom") return;
     const expected = plan.monthlyPricePerSeat * seats;
     updateTool(entryId, { monthlySpend: expected });
   };
@@ -392,7 +381,7 @@ export default function AuditForm() {
                 ? 0
                 : (currentPlan?.monthlyPricePerSeat ?? 0) * (entry.seats || 0);
 
-              const userOverride = userEditedSpend.current.has(entry.id);
+              const userOverride = userEditedSpend.has(entry.id);
               const overspending =
                 expectedCost > 0 && entry.monthlySpend > expectedCost * 1.15;
 
@@ -453,7 +442,6 @@ export default function AuditForm() {
                                 onChange={(e) => {
                                   const newPlanId = e.target.value;
                                   updateTool(entry.id, { planId: newPlanId });
-                                  // Auto-recalc spend on plan change
                                   recalcSpend(entry.id, newPlanId, entry.seats);
                                 }}
                                 className="input appearance-none pr-7 text-[13px]"
@@ -535,7 +523,11 @@ export default function AuditForm() {
                               id={`spend-${entry.id}`}
                               value={entry.monthlySpend > 0 ? entry.monthlySpend : undefined}
                               onChange={(v) => {
-                                userEditedSpend.current.add(entry.id);
+                                setUserEditedSpend((prev) => {
+                                  const next = new Set(prev);
+                                  next.add(entry.id);
+                                  return next;
+                                });
                                 updateTool(entry.id, { monthlySpend: v ?? 0 });
                               }}
                               placeholder={
@@ -554,7 +546,6 @@ export default function AuditForm() {
                         </div>
 
                         {/* ── Inline status hint ──────────────────────────── */}
-                        {/* Standard plan: show expected cost + override controls */}
                         {!isVariablePlan && expectedCost > 0 && (
                           <div className="flex items-center gap-2 mt-2.5 text-[11px] tabular flex-wrap">
                             <span style={{ color: "var(--text-muted)" }}>
@@ -573,7 +564,11 @@ export default function AuditForm() {
                               <button
                                 type="button"
                                 onClick={() => {
-                                  userEditedSpend.current.delete(entry.id);
+                                  setUserEditedSpend((prev) => {
+                                    const next = new Set(prev);
+                                    next.delete(entry.id);
+                                    return next;
+                                  });
                                   updateTool(entry.id, { monthlySpend: expectedCost });
                                 }}
                                 className="text-[11px] underline transition-colors"
@@ -585,7 +580,6 @@ export default function AuditForm() {
                           </div>
                         )}
 
-                        {/* Usage-based plan hint */}
                         {currentPlan?.priceType === "usage" && (
                           <p
                             className="mt-2.5 text-[11px] leading-relaxed"
@@ -595,7 +589,6 @@ export default function AuditForm() {
                           </p>
                         )}
 
-                        {/* Custom-quoted plan hint */}
                         {currentPlan?.priceType === "custom" && (
                           <p
                             className="mt-2.5 text-[11px] leading-relaxed"
@@ -616,7 +609,11 @@ export default function AuditForm() {
                       {/* Remove button */}
                       <button
                         onClick={() => {
-                          userEditedSpend.current.delete(entry.id);
+                          setUserEditedSpend((prev) => {
+                            const next = new Set(prev);
+                            next.delete(entry.id);
+                            return next;
+                          });
                           removeTool(entry.id);
                         }}
                         aria-label={`Remove ${tool.name}`}
