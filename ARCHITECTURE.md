@@ -92,6 +92,11 @@ graph TD
 | **No Prisma** | Supabase's JS client with typed JSON columns is sufficient for this schema. Prisma adds migration complexity without meaningful benefit at this scale. |
 | **jsPDF (no html2canvas)** | Canvas-based export breaks on dark-mode CSS variables and backdrop-filter utilities. Pure jsPDF layout with explicit coordinates and splitTextToSize produces clean, predictable output that matches the screen. |
 
+## Known Limitations
+
+**Email delivery (free tier constraint):**
+Resend's free tier requires a verified custom sender domain for unrestricted delivery. Without one, emails send successfully but deliver only to the account owner's verified address. The lead capture, storage, and email dispatch all work correctly — this is a Resend free tier infrastructure limit, not a missing feature. Production fix: verify a custom domain at resend.com/domains (15 minutes, requires owning a domain) or upgrade to Resend's $20/mo plan for unrestricted sending.
+
 ## What Changes at 10k Audits/Day
 
 1. **Rate limiting → Upstash Redis**
