@@ -87,12 +87,12 @@ Neutralizes:
 
 | Tool | Plan | Price |
 |---|---|---|
-| Cursor | Business | $40/seat |
+| Cursor | Teams | $40/seat |
 | Cursor | Pro | $20/seat |
 | GitHub Copilot | Enterprise | $39/seat |
 | GitHub Copilot | Business | $19/seat |
-| Claude | Team | $30/seat |
-| ChatGPT | Team | $25/seat |
+| Claude | Team Standard | $25/seat |
+| ChatGPT | Business | $20/seat |
 
 ### Footer
 > Source: vendor pricing pages
@@ -144,7 +144,7 @@ Neutralizes:
 ## Finding 01
 
 **Tool:**  
-> Cursor — Business
+> Cursor — Teams
 
 **Recommendation:**  
 > Downgrade to Pro — 6 of 10 seats under usage threshold
@@ -170,7 +170,7 @@ Neutralizes:
 ## Finding 03
 
 **Tool:**  
-> Claude — Team
+> Claude — Team Standard
 
 **Recommendation:**  
 > Switch 3 light users to Pro
@@ -183,7 +183,7 @@ Neutralizes:
 ## Finding 04
 
 **Tool:**  
-> ChatGPT — Team
+> ChatGPT — Business
 
 **Recommendation:**  
 > Remove 2 inactive seats
@@ -521,4 +521,4 @@ Not:
 - a flashy startup landing page
 - a consumer productivity app
 
----
+---a
