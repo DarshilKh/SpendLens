@@ -1,6 +1,5 @@
 "use client";
 import { useState } from "react";
-import { motion, AnimatePresence } from "framer-motion";
 import { X, CheckCircle, Loader2 } from "lucide-react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -67,7 +66,7 @@ export default function LeadCaptureModal({ result, onClose }: Props) {
   };
 
   return (
-    <AnimatePresence>
+    
       <div
         className="fixed inset-0 z-50 flex items-center justify-center p-4"
         role="dialog"
@@ -75,23 +74,16 @@ export default function LeadCaptureModal({ result, onClose }: Props) {
         aria-labelledby="modal-title"
       >
         {/* Backdrop */}
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          className="absolute inset-0"
+        <div
+          className="absolute inset-0 fade-in"
           style={{ background: "rgba(7,17,26,0.88)", backdropFilter: "blur(10px)" }}
           onClick={onClose}
           aria-hidden="true"
         />
 
         {/* Modal */}
-        <motion.div
-          initial={{ opacity: 0, scale: 0.96, y: 8 }}
-          animate={{ opacity: 1, scale: 1, y: 0 }}
-          exit={{ opacity: 0, scale: 0.96 }}
-          transition={{ duration: 0.2 }}
-          className="relative w-full max-w-md p-6 rounded-xl"
+        <div
+          className="relative w-full max-w-md p-6 rounded-xl fade-in"
           style={{
             background: "var(--bg-elevated)",
             border: "1px solid var(--border)",
@@ -111,18 +103,15 @@ export default function LeadCaptureModal({ result, onClose }: Props) {
 
           {submitted ? (
             <div className="text-center py-4">
-              <motion.div
-                initial={{ scale: 0 }}
-                animate={{ scale: 1 }}
-                transition={{ type: "spring", stiffness: 200 }}
-                className="w-14 h-14 rounded-full flex items-center justify-center mx-auto mb-4"
+              <div
+                className="w-14 h-14 rounded-full flex items-center justify-center mx-auto mb-4 fade-in"
                 style={{
                   background: "rgba(163,190,140,0.12)",
                   border: "1px solid rgba(163,190,140,0.25)",
                 }}
               >
                 <CheckCircle size={26} style={{ color: "var(--accent-green)" }} aria-hidden="true" />
-              </motion.div>
+              </div>
               <h3
                 className="text-lg font-semibold mb-2"
                 style={{ color: "var(--text-primary)" }}
@@ -293,8 +282,8 @@ export default function LeadCaptureModal({ result, onClose }: Props) {
               </form>
             </>
           )}
-        </motion.div>
+        </div>
       </div>
-    </AnimatePresence>
+    
   );
 }

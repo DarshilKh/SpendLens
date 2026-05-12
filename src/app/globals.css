@@ -380,3 +380,20 @@
 
 .animate-fade-up { animation: fadeUp 0.45s var(--ease-out-expo) forwards; }
 .animate-fade-in { animation: fadeIn 0.3s var(--ease-out-quart) forwards; }
+/* Spinner animations — replaces framer-motion for AuditRunning */
+@keyframes spinSlow {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+@keyframes spinFast {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+
+.spin-slow  { animation: spinSlow 8s linear infinite; }
+.spin-medium { animation: spinSlow 5s linear infinite reverse; }
+.spin-fast  { animation: spinFast 1.2s linear infinite; }
+
+/* Step panel fade — replaces framer-motion AnimatePresence */
+.fade-in { animation: fadeIn 0.25s ease-out forwards; }
+.step-panel { width: 100%; }

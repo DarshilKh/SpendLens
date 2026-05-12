@@ -1,5 +1,4 @@
 "use client";
-import { AnimatePresence, motion } from "framer-motion";
 import Link from "next/link";
 import { ArrowLeft, CheckCircle2 } from "lucide-react";
 import { useAuditStore } from "@/store/audit-store";
@@ -74,11 +73,7 @@ export default function AuditPageClient() {
 
   return (
     <div className="min-h-screen" style={{ background: "var(--bg-base)" }}>
-      {/* Nav */}
-      <header
-        className="sticky top-0 z-40 glass"
-        role="banner"
-      >
+      <header className="sticky top-0 z-40 glass" role="banner">
         <div className="max-w-4xl mx-auto px-6 h-14 flex items-center justify-between">
           <Link
             href="/"
@@ -96,41 +91,27 @@ export default function AuditPageClient() {
       </header>
 
       <main>
-        <AnimatePresence mode="wait">
-          {step === "form" && (
-            <motion.div
-              key="form"
-              initial={{ opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -8 }}
-              transition={{ duration: 0.2 }}
-            >
-              <AuditForm />
-            </motion.div>
-          )}
-          {step === "running" && (
-            <motion.div
-              key="running"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.15 }}
-            >
-              <AuditRunning />
-            </motion.div>
-          )}
-          {step === "results" && auditResult && (
-            <motion.div
-              key="results"
-              initial={{ opacity: 0, y: 12 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.3 }}
-            >
-              <AuditResults result={auditResult} />
-            </motion.div>
-          )}
-        </AnimatePresence>
+        <div
+          key="form"
+          className="step-panel"
+          style={{ display: step === "form" ? "block" : "none" }}
+        >
+          <AuditForm />
+        </div>
+
+        <div
+          key="running"
+          className="step-panel"
+          style={{ display: step === "running" ? "block" : "none" }}
+        >
+          <AuditRunning />
+        </div>
+
+        {step === "results" && auditResult && (
+          <div className="step-panel fade-in">
+            <AuditResults result={auditResult} />
+          </div>
+        )}
       </main>
     </div>
   );
