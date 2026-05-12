@@ -7,86 +7,86 @@ Each was 10–15 minutes, conducted over a voice call or voice message thread.
 
 ## Interview 1
 
-**Name / initials:** R.S.
-**Role:** Co-founder / CTO
-**Company stage:** Seed (~$800k raised, 6 people)
+**Name / initials:** A.G.
+**Role:** Student / indie builder
+**Company stage:** Pre-revenue, solo — working on an AI agent project
 **Date conducted:** 2025-05-05
-**Duration:** 12 minutes
+**Duration:** 7 minutes
 
 **3+ direct quotes:**
 
-> "We're probably paying for three different AI things that do overlapping stuff, but I genuinely don't know which one to cut because I don't know who uses what."
+> "I've spent around $1,200 getting this project off the ground and a big chunk of that is just AI tools I'm paying for at the same time — Claude, Copilot, Kimi for reasoning stuff, GPT."
 
-> "The number I care about is cost per engineer per month, not total spend. Total spend is meaningless without knowing team size."
+> "I already use Groq because someone told me it was faster and cheaper. I don't even know if I set it up the right way. I just know it's running."
 
-> "I would not trust a recommendation that just said 'switch to X.' I'd want to know why — like what specifically am I paying for that I'm not getting."
+> "I have a 1,660-line prompt file I built in Perplexity two months ago. I use it as a kind of system prompt for everything — I save the session, export to markdown, upload it again. It's basically my memory layer."
 
 **The most surprising thing they said:**
 
-They already had a Notion doc where they'd tried to manually audit their AI subscriptions three months ago. They got halfway through and abandoned it because they couldn't figure out what the "right" benchmark was — they didn't know if $60/developer/month was good or terrible. They said: "There's no Mint for this stuff, and the vendor pricing pages are not designed to help you compare." That validated the benchmark widget as a core feature, not a nice-to-have.
+They'd built a surprisingly sophisticated personal workflow using `.agent` and `.rules` files inside Perplexity to get something close to a persistent context — basically homebrew memory management. They weren't complaining about the cost so much as the chaos of having no clear view of what they were actually paying per tool and whether any of it was redundant. They said: "I know I'm probably paying for three things that do similar stuff. I just haven't sat down to figure it out because I don't even know what the right benchmark is for someone like me." That last part landed hard — the benchmark problem isn't just a company problem, it's personal too.
 
 **What it changed about my design:**
 
-Moved the benchmark widget to the top of the results page — above the per-tool recommendations — based on their feedback that "am I weird?" is the first question they want answered before they read any recommendation. Originally the benchmark was below the fold. Also changed the benchmark label copy from "spending $X per developer" to "spending $X per developer per month — [percentile] of teams your size" to make the comparison immediate.
+Their workflow surfaced a use case I hadn't accounted for: solo builders who stack tools aggressively and have no finance process to catch waste. The current benchmark tiers assume team context (cost per developer). Added a solo/individual tier to the benchmark logic — "spending $X/month as a solo builder" with a separate reference range. Also noted genuine interest from A.G. in using SpendLens once it's live, which confirmed the tool has pull beyond the CTO/EM audience I'd been designing for.
 
 ---
 
 ## Interview 2
 
-**Name / initials:** A.K.
-**Role:** Engineering Manager
-**Company stage:** Series A (~35 engineers)
+**Name / initials:** P.W.
+**Role:** Digital marketing expert / educator
+**Company stage:** Independent — teaches and consults, uses AI tools daily
 **Date conducted:** 2025-05-05
-**Duration:** 14 minutes
+**Duration:** 6 minutes
 
 **3+ direct quotes:**
 
-> "We have GitHub Copilot Enterprise and honestly I have no idea if we're actually using the personalized model features. I just know the contract renewal is coming up."
+> "I use Claude for most of my actual thinking work. The others I've tried but I keep coming back. It's not about price for me — it's about whether the output is actually good."
 
-> "If something shows me $200 a month in savings I'm going to forward it to my CFO. If it shows me $2,000 a month in savings I'm going to forward it to my CFO and cc the CEO."
+> "If I'm going to downgrade something, I need to understand why. Not just 'you'll save $15.' Tell me what I'm actually giving up and whether it matters for how I use it."
 
-> "I don't need a tool to tell me to switch to a competitor. I need a tool to tell me we're on the wrong plan within a product we've already decided to use."
+> "It's a good idea. The problem it's solving is real. I just want to make sure it's not going to tell me to switch things that are working."
 
 **The most surprising thing they said:**
 
-At a 35-person company with a real procurement process, they were more interested in within-vendor downgrades than switching to alternatives. They said switching tools at their stage involves retraining, integration work, and internal politics — "the switching cost is real and you should probably factor that into your savings estimate." This was the opposite of what I expected. I'd assumed the biggest value would be cross-vendor alternatives.
+P.W. said they primarily rely on their own judgment before trusting any tool recommendation — which initially sounded like a blocker, but wasn't. What they actually meant was that they'd engage seriously with a well-reasoned recommendation but would reject anything that felt generic or one-size-fits-all. They brought up that most AI spend advice online is written for engineering teams and doesn't account for people who use these tools for creative or strategic work, where "the cheapest option" is often not fit for purpose. That reframing — cost advice that acknowledges use case fit — directly influenced the copy around findings.
 
 **What it changed about my design:**
 
-Added logic to the audit engine to weight within-vendor plan downgrades as higher-confidence recommendations than cross-vendor alternatives. The recommendation card now shows a "Confidence: High / Medium" tag — plan downgrades are High (no switching cost), alternative tools are Medium (switching cost acknowledged in the reasoning text). This distinction was not in the original design.
+Tightened the reasoning copy on recommendation cards. Instead of "switch to X, save $Y," findings now lead with what specifically about the current plan is underused or mismatched, then present the saving. Also added a caveat line to cross-vendor alternatives: "consider whether your primary use case aligns" — directly from this conversation. P.W. also confirmed interest in using the tool but said they'd only act on a recommendation if the reasoning held up independently, which is a credibility standard we should be designing toward anyway.
 
 ---
 
 ## Interview 3
 
-**Name / initials:** P.M.
-**Role:** Technical Co-founder
-**Company stage:** Pre-seed (bootstrapped, 3 people)
+**Name / initials:** R.S.
+**Role:** Peer / early-stage founder
+**Company stage:** Pre-seed, 3–5 people, training a custom model on Gemini API
 **Date conducted:** 2025-05-06
-**Duration:** 11 minutes
+**Duration:** 8 minutes
 
 **3+ direct quotes:**
 
-> "I'm paying for Cursor Pro and Claude Pro and I just realised while talking to you that I probably don't need both. I just never thought about it."
+> "We're basically living inside the Gemini API right now. Every training run, every eval — it all hits the API. I calculate the cost per run manually in a spreadsheet."
 
-> "I would use this every time I'm about to add a new subscription. Like a sanity check before I click buy."
+> "I'm not really the target user for this, honestly. When you're training models you kind of have to track spend obsessively anyway — it's not something you can afford to be vague about."
 
-> "The email thing is fine as long as it's not immediately followed by a sales call. I hate when free tools are just funnels."
+> "I get what you're building but for me the problem doesn't exist the way it does for you. The moment you have GPU costs in the mix, subscription pricing feels small."
 
 **The most surprising thing they said:**
 
-They said they'd actually prefer the tool not tell them to switch away from tools they "emotionally trust," even if the savings are real. They mentioned they chose Claude over GPT-4 for reasons that had nothing to do with price — they preferred the writing style — and they'd resent a recommendation that said "switch to GPT-4, save $X" because it missed the point entirely. This surfaced a real gap: the current engine doesn't account for preference or existing workflow investment.
+R.S. was the clearest "not the user" signal across the three interviews — which was actually useful data. They weren't dismissive of the product, just precise about why it didn't apply to them. Their spend is all API usage tied to model training, tracked at the run level, with no subscription-based tooling to audit. The entire value proposition of SpendLens — catching waste in seat-based subscriptions — doesn't map onto their workflow. What was interesting: they said their concern was compute cost per training epoch, not per-seat pricing, which put a hard lower bound on the addressable audience. Teams that have crossed into custom model training have a different cost structure entirely.
 
 **What it changed about my design:**
 
-Added a "use case fit" note to cross-vendor alternative recommendations — e.g., "ChatGPT Plus is lower cost for coding tasks, though Claude has stronger long-form writing output. Consider whether your primary use case matches." This isn't comprehensive preference modeling, but it signals awareness that "cheapest" doesn't always mean "right." The recommendation copy now avoids phrasing like "X is better than Y" in favor of "X may better fit [specific use case]."
+Clarified the ICP framing in my head. SpendLens is for teams using off-the-shelf AI tooling on subscription plans — not teams running custom training pipelines or doing heavy API volume with tracked usage. The copy already leans this way implicitly ("AI tools your team uses"), but this conversation made me more confident about not trying to stretch the product to cover API cost optimization in a granular way. Keeping the scope tight is the right call for now.
 
 ---
 
 ## Synthesis
 
-All three interviews confirmed the core product hypothesis: founders and engineering managers know roughly what they're spending on AI tools but have no reference point for whether it's reasonable. The Notion audit doc story (Interview 1) and the upcoming GitHub Copilot renewal story (Interview 2) both showed that the problem is real and people have already tried to solve it manually and failed.
+All three conversations pointed toward the same core problem from different angles: people using AI tools have a reasonable sense of what they're spending but no reference point for whether it's appropriate. A.G. was spending $1,200+ across a personal project without a clear view of redundancy. P.W. was using premium plans and open to optimization, but only with reasoning that respected how they actually work. R.S. was out of scope entirely — which sharpened who is in scope.
 
-The biggest unexpected theme was switching cost awareness. The Series A EM's comment that cross-tool alternatives "miss the point" at their stage was echoed (differently) by the pre-seed founder who didn't want to be pushed away from tools they trusted. This shifted the engine's priority toward within-vendor plan downgrades as the primary recommendation type, with cross-vendor alternatives as secondary and clearly labelled as "medium confidence" because they require adoption work.
+The most consistent theme across the two relevant interviews was that recommendations need to feel earned. Neither A.G. nor P.W. would act on a finding that said "switch to X" without a specific reason tied to their actual usage pattern. That reinforced the existing design decision to lead with evidence (underused features, mismatched tier) before the saving, and to label cross-vendor alternatives as medium confidence with use-case caveats.
 
-One contradiction: Interview 1 (small team, early stage) wanted aggressive savings suggestions and didn't care much about switching cost. Interview 2 (larger team, later stage) explicitly wanted to stay within vendor and considered switching-cost-unaware recommendations a credibility problem. This shaped the org-size tiers in the engine — small orgs get more aggressive alternative suggestions, larger orgs get more conservative, governance-aware ones.
+One structural insight from R.S.: the moment a team starts running custom model training, subscription auditing becomes a secondary concern. This puts a natural ceiling on the audience and argues for keeping SpendLens tightly focused on the subscription layer rather than expanding into API cost management.
