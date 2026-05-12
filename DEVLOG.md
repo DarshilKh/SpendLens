@@ -42,7 +42,7 @@ Build the core — pricing data, audit engine, tests. Write the tests before the
 
 ## Day 3 — 2025-05-08
 
-**Hours worked:** 7
+**Hours worked:** 4
 
 **What I did:**
 Big day. Got the full project codebase together and pushed the first real commit to GitHub. Built the entire UI scaffolding: landing page (nav, hero, features section, FAQ, footer), audit form with Zustand persistence, and the results page layout. Also started the audit engine — built the org tier classification logic (`solo / small / growing / midmarket / enterprise`) and the plan fit evaluation for the first three tools. Pushed multiple commits throughout the day as features reached working state.
@@ -60,7 +60,7 @@ Finish the audit engine for all 8 tools. Fix the analysis display — it's loadi
 
 ## Day 4 — 2025-05-09
 
-**Hours worked:** 8
+**Hours worked:** 6
 
 **What I did:**
 Fixed the audit analysis display — the results page was stuck on a loading spinner because the audit API route was returning a 200 with an empty `result` field instead of surfacing the error. Added proper error state handling: now shows a visible error card with the specific failure reason instead of infinite loading. This was the most important fix of the week — a tool that silently fails is worse than one that crashes loudly.
@@ -84,7 +84,7 @@ Verify all pricing data against live vendor pages as of today. Fix the enterpris
 
 ## Day 5 — 2025-05-10
 
-**Hours worked:** 7
+**Hours worked:** 6
 
 **What I did:**
 Spent the first two hours going through every vendor pricing page and verifying every number in `pricing-data.ts` against what's live as of today (May 10, 2026). Found a discrepancy with Windsurf — the marketing site showed Pro at $15/mo but the checkout page showed $20/mo. Used the checkout price and noted the discrepancy in PRICING_DATA.md. Everything else checked out, though Cursor's plan rename from "Business" to "Teams" had left some stale references in the test file — fixed those.
@@ -108,7 +108,7 @@ Third user interview. Fix all the .md documentation files. Enhance landing featu
 
 ## Day 6 — 2025-05-11
 
-**Hours worked:** 7
+**Hours worked:** 5
 
 **What I did:**
 Third user interview in the morning — pre-seed founder, 3-person team. Changed the cross-vendor alternative recommendation copy to avoid "X is better than Y" framing in favor of "X may better fit [specific use case]" (details in USER_INTERVIEWS.md).
