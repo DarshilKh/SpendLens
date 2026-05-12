@@ -1,4 +1,5 @@
 "use client";
+import { useEffect } from "react";
 import Link from "next/link";
 import { ArrowLeft, CheckCircle2 } from "lucide-react";
 import { useAuditStore } from "@/store/audit-store";
@@ -71,6 +72,11 @@ export default function AuditPageClient() {
   const { auditResult, isRunningAudit } = useAuditStore();
   const step: Step = auditResult ? "results" : isRunningAudit ? "running" : "form";
 
+  // Scroll to top whenever step changes
+  useEffect(() => {
+    window.scrollTo({ top: 0, behavior: "instant" });
+  }, [step]);
+
   return (
     <div className="min-h-screen" style={{ background: "var(--bg-base)" }}>
       <header className="sticky top-0 z-40 glass" role="banner">
@@ -92,7 +98,6 @@ export default function AuditPageClient() {
 
       <main>
         <div
-          key="form"
           className="step-panel"
           style={{ display: step === "form" ? "block" : "none" }}
         >
@@ -100,7 +105,6 @@ export default function AuditPageClient() {
         </div>
 
         <div
-          key="running"
           className="step-panel"
           style={{ display: step === "running" ? "block" : "none" }}
         >
